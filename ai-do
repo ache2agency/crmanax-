@@ -1,0 +1,26 @@
+`bash
+#!/bin/bash
+
+# Pregunta al usuario
+echo -e "🤖 ¿Qué quieres que haga?"
+
+# Lee la respuesta del usuario
+read user_input
+
+# Define el nombre de la carpeta del proyecto
+project_name=$(echo "$user_input" | tr ' ' '-' | tr '[:upper:]' 
+'[:lower:]')
+
+# Crea la carpeta del proyecto
+mkdir -p "$project_name"
+
+# Define el nombre del archivo de código
+code_file="$project_name/code.py"
+
+# Usa ollama con el modelo qwen2.5-coder:14b para generar el código
+ollama --model qwen2.5-coder:14b --prompt "$user_input" --output 
+"$code_file"
+
+# Muestra dónde se guardó el código
+echo -e "El código se ha guardado en $code_file"
+```

@@ -1,0 +1,19 @@
+User-agent: *
+Allow: /
+
+# Sitemap
+Sitemap: https://salescrm.com/sitemap.xml
+
+# Block common non-content paths
+Disallow: /api/
+Disallow: /_next/
+Disallow: /node_modules/
+Disallow: /.git/
+Disallow: /.env*
+
+# Allow search engines to crawl main content
+Allow: /landing.html
+Allow: /README.md
+Allow: /docs/
+
+Crawl-delay: 1

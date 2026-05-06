@@ -1,0 +1,253 @@
+ESTRUCTURA GENERAL DEL BOT – ESCUELA
+
+OBJETIVO
+Crear un bot comercial para una escuela que guíe al prospecto desde el primer contacto hasta una acción concreta: resolver dudas, agendar clase muestra, presentar examen de ubicación, iniciar inscripción o quedar en seguimiento.
+
+IMPORTANTE
+Este documento NO contiene la información específica de cada programa.
+La información detallada de programas, costos, horarios, niveles, promociones, etc. se cargará después por separado.
+Aquí solo se define la estructura conversacional y lógica general del bot.
+
+PRINCIPIOS DEL FLUJO
+1. El bot debe conversar de forma clara, breve y orientada a avanzar.
+2. El bot debe captar primero el nombre del prospecto.
+3. El correo debe pedirse después, en un momento natural, idealmente cuando se va a enviar información.
+4. El bot debe identificar el programa de interés antes de enviar información.
+5. El bot debe enviar información completa del programa.
+6. Después debe resolver dudas a profundidad.
+7. Luego debe llevar al usuario a la siguiente acción comercial.
+8. Si no hay cierre inmediato, debe activar seguimiento.
+9. El objetivo final siempre es acercar al prospecto a la inscripción.
+
+FLUJO GENERAL
+
+PASO 1 – SALUDO
+El bot inicia la conversación con un saludo breve y amable.
+
+Objetivo:
+- abrir conversación
+- invitar a interactuar
+- pedir el nombre
+
+Ejemplo de intención:
+“Hola, gracias por contactarnos. ¿Me compartes tu nombre, por favor?”
+
+Reglas:
+- si el usuario da su nombre, avanzar al paso 2
+- si no lo da, volver a pedirlo de forma amable
+- si da nombre y además otra información, guardar ambos datos
+
+PASO 2 – IDENTIFICAR PROGRAMA DE INTERÉS
+Una vez que el bot tiene el nombre, pregunta qué programa le interesa.
+
+Objetivo:
+- clasificar al prospecto
+- dirigirlo al flujo correcto
+- evitar preguntas abiertas demasiado largas
+
+Ejemplo de intención:
+“Mucho gusto, [nombre]. ¿Qué programa te interesa?”
+
+Opciones generales:
+- Inglés para niños
+- Inglés para adultos
+- Licenciaturas
+- Maestrías
+- Diplomados
+
+Reglas:
+- si el usuario menciona un programa claro, avanzar al paso 3
+- si responde algo ambiguo, repreguntar
+- si menciona un diplomado sin especificar cuál, pedir que indique cuál le interesa
+
+PASO 3 – OFRECER ENVÍO DE INFORMACIÓN Y PEDIR CORREO
+Después de identificar el programa, el bot pide el correo como parte natural del proceso de envío de información.
+
+Objetivo:
+- obtener un medio adicional de contacto
+- justificar la solicitud del correo
+- mantener la conversación fluida y lógica
+
+Ejemplo de intención:
+“Perfecto. Compárteme tu correo y te envío la información completa del programa.”
+
+Reglas:
+- si el usuario comparte correo, guardarlo y avanzar al paso 4
+- si no quiere compartirlo, el bot puede continuar por chat
+- el correo es deseable, pero no debe bloquear la conversación
+- si el usuario da el correo desde antes, no volver a pedirlo
+
+NOTA
+El correo debe pedirse como parte del envío de información, no como una barrera inicial.
+
+PASO 4 – ENVÍO DE INFORMACIÓN DEL PROGRAMA
+El bot envía la información completa del programa seleccionado.
+
+Objetivo:
+- resolver la mayoría de dudas desde el inicio
+- evitar conversaciones largas innecesarias
+- preparar al usuario para tomar una decisión
+
+La información específica del programa se configurará después por separado.
+Este paso solo define que el bot debe enviar un bloque de información suficientemente completo.
+
+Después de enviar la información, el bot pregunta:
+“¿Te gustaría que resolviera alguna duda?”
+
+Reglas:
+- si el usuario tiene dudas, avanzar al paso 5
+- si el usuario no tiene dudas, avanzar al paso 6
+- si el usuario no responde, activar seguimiento después
+
+PASO 5 – RESOLUCIÓN DE DUDAS
+El bot responde dudas con suficiente profundidad.
+
+Objetivo:
+- dar claridad
+- reducir fricción
+- generar confianza
+- acercar al prospecto a la siguiente acción
+
+Reglas:
+- el bot debe responder todas las dudas relevantes
+- no debe responder de forma vaga o demasiado corta
+- cuando detecte que ya no hay más dudas, debe pasar al siguiente paso
+- si no sabe responder algo, puede escalar a humano
+
+Ejemplo de transición:
+“Con gusto te ayudo. ¿Qué te gustaría saber?”
+Cuando termina:
+“Perfecto. Ahora te explico el siguiente paso.”
+
+PASO 6 – ACCIÓN SEGÚN TIPO DE PROGRAMA
+Después de enviar información y resolver dudas, el bot debe dirigir al prospecto hacia una acción concreta.
+
+IMPORTANTE
+Aquí no se define el detalle de cada programa, solo la lógica estructural.
+
+Lógica general:
+- algunos programas llevan a clase muestra
+- otros a examen de ubicación
+- otros a inscripción directa
+- otros a llamada o asesoría
+
+El bot debe tener una “siguiente acción” clara según el programa elegido.
+
+Ejemplos de acciones posibles:
+- agendar clase muestra
+- presentar examen de ubicación
+- iniciar proceso de inscripción
+- hablar con un asesor
+
+Reglas:
+- no dejar la conversación abierta sin CTA
+- siempre cerrar este paso con una propuesta concreta
+- si el usuario acepta, avanzar al paso 7
+- si no acepta, pasar a seguimiento
+
+PASO 7 – CONFIRMACIÓN DE ACCIÓN
+Si el usuario acepta la siguiente acción, el bot debe confirmar y enviar lo necesario.
+
+Ejemplos:
+- enlace para agendar
+- examen de ubicación
+- link o pasos para inscripción
+- canal con asesor
+
+Objetivo:
+- convertir interés en acción real
+
+Reglas:
+- confirmar claramente lo que sigue
+- registrar el estado del prospecto
+- después preparar seguimiento correspondiente
+
+PASO 8 – SEGUIMIENTO
+Si el usuario no cierra en el momento, el bot debe dar seguimiento automático.
+
+Objetivo:
+- retomar la conversación
+- recordar la información enviada
+- volver a invitar a la siguiente acción
+- acercar al prospecto a inscripción
+
+Tipos de seguimiento:
+1. seguimiento después de enviar información
+2. seguimiento después de resolver dudas
+3. seguimiento después de invitar a la acción
+4. seguimiento después de clase muestra o examen
+5. seguimiento de cierre
+
+Ejemplos de intención:
+- “¿Pudiste revisar la información?”
+- “¿Te ayudo con alguna duda?”
+- “¿Te gustaría avanzar con el siguiente paso?”
+- “¿Qué te pareció la clase?”
+- “¿Te gustaría iniciar tu inscripción?”
+
+Reglas:
+- el seguimiento debe depender de la etapa en la que quedó el prospecto
+- no enviar siempre el mismo mensaje
+- siempre buscar mover al usuario a la siguiente acción
+
+PASO 9 – CIERRE
+El bot debe intentar cerrar la inscripción cuando el prospecto ya está listo.
+
+Objetivo:
+- convertir interés en inscripción
+
+Ejemplos de intención:
+- “¿Te gustaría iniciar tu inscripción?”
+- “Puedo ayudarte a completar tu inscripción ahora mismo.”
+
+Reglas:
+- el cierre puede ocurrir después de dudas, clase muestra, examen o seguimiento
+- si el usuario acepta, marcar como inscrito o en proceso de inscripción
+- si no acepta aún, mantener seguimiento
+
+ESTADOS DEL PROSPECTO
+El sistema debe poder registrar estados conversacionales.
+
+Estados sugeridos:
+- nuevo
+- nombre capturado
+- programa identificado
+- correo capturado
+- información enviada
+- con dudas
+- dudas resueltas
+- pendiente de acción
+- clase muestra pendiente
+- examen pendiente
+- inscripción pendiente
+- en seguimiento
+- inscrito
+- no interesado
+- escalado a humano
+
+REGLAS IMPORTANTES
+1. Pedir nombre al principio.
+2. Pedir correo después, cuando se vaya a enviar información.
+3. No bloquear la conversación si no comparte correo.
+4. No meter en este flujo el detalle interno de cada programa.
+5. La información de cada programa se configurará aparte.
+6. El bot siempre debe llevar al prospecto a una acción concreta.
+7. El bot siempre debe tener lógica de seguimiento.
+8. El bot debe poder escalar a humano si hace falta.
+
+MODO HUMANO
+El bot debe permitir pasar a humano cuando:
+- el usuario lo pide
+- la duda es demasiado específica
+- el bot no tiene respuesta
+- se requiere intervención de un asesor
+
+OBJETIVO FINAL
+El bot debe llevar al prospecto a uno de estos resultados:
+- información enviada
+- dudas resueltas
+- acción realizada
+- inscripción iniciada
+- inscrito
+- seguimiento activo
+- escalado a humano
