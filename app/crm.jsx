@@ -48,7 +48,7 @@ const WA_TEMPLATES = {
 };
 
 const normalizeStage = (stage) => LEGACY_STAGE_MAP[stage] || stage || "primer_contacto";
-const AGENDAR_LINK = "https://crm.windsor.edu.mx/agendar/hola@windsor.edu.mx";
+const AGENDAR_LINK = "https://crmanax.vercel.app/agendar/";
 
 const getInfoTemplateForLead = (lead) => {
   const nombre = lead?.nombre?.split(" ")[0] || "Hola";
@@ -100,7 +100,7 @@ export default function CRM() {
     {
       role: "assistant",
       content:
-        "Hola, soy tu asistente comercial de Instituto Windsor. Cuéntame sobre tus prospectos y te doy recomendaciones concretas para dar mejor seguimiento.",
+        "Hola, soy tu asistente comercial de Anaxagoras. Cuéntame sobre tus prospectos y te doy recomendaciones concretas para dar mejor seguimiento.",
     },
   ]);
   const [chatInput, setChatInput] = useState("");
@@ -417,7 +417,7 @@ export default function CRM() {
       return;
     }
 
-    const loginAt = localStorage.getItem('windsor_login_at');
+    const loginAt = localStorage.getItem('anaxagoras_login_at');
     const expired = !loginAt || (Date.now() - parseInt(loginAt, 10)) > SESSION_HOURS * 3600 * 1000;
     if (expired) {
       await supabase.auth.signOut();
@@ -2277,7 +2277,7 @@ export default function CRM() {
                 </div>
               </div>
             ))}
-            <div style={{ textAlign: "center", marginTop: 8, fontSize: 11, color: "#94a3b8" }}>Windsor CRM — Soporte: hola@windsor.edu.mx</div>
+            <div style={{ textAlign: "center", marginTop: 8, fontSize: 11, color: "#94a3b8" }}>Anaxagoras CRM</div>
           </div>
         </div>
       )}
@@ -2397,10 +2397,10 @@ export default function CRM() {
                   textTransform: "uppercase",
                 }}
               >
-                Asistente Windsor
+                Asistente Anaxagoras
               </div>
               <div style={{ fontSize: 11, color: "#64748b", marginTop: 2 }}>
-                IA enfocada en admisiones y seguimiento de prospectos
+                IA enfocada en renta de departamentos y seguimiento de prospectos
               </div>
             </div>
             <button

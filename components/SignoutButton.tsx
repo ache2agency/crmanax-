@@ -2,7 +2,7 @@
 
 export default function SignoutButton() {
   const handleSignout = async () => {
-    localStorage.removeItem('windsor_login_at');
+    localStorage.removeItem('anaxagoras_login_at');
     const form = document.createElement('form');
     form.method = 'post';
     form.action = '/auth/signout';

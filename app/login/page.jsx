@@ -27,7 +27,7 @@ export default function Login() {
     if (error) {
       setError(error.message);
     } else {
-      localStorage.setItem('windsor_login_at', Date.now().toString());
+      localStorage.setItem('anaxagoras_login_at', Date.now().toString());
       router.push("/");
     }
     setLoading(false);
@@ -60,7 +60,7 @@ export default function Login() {
       <div style={{ background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: 12, padding: 40, width: "100%", maxWidth: 400, boxShadow: "0 4px 24px rgba(0,0,0,0.07)" }}>
 
         <div style={{ marginBottom: 32 }}>
-          <div style={{ fontFamily: "'Bebas Neue'", fontSize: 32, color: "#2C4A8C", letterSpacing: 3, marginBottom: 4 }}>WINDSOR CRM</div>
+          <div style={{ fontFamily: "'Bebas Neue'", fontSize: 32, color: "#2C4A8C", letterSpacing: 3, marginBottom: 4 }}>ANAXAGORAS CRM</div>
           <div style={{ fontSize: 12, color: "#94a3b8", letterSpacing: 1 }}>Iniciar sesión</div>
         </div>
 
