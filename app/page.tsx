@@ -32,7 +32,7 @@ export default async function Home() {
         flexShrink:0,
       }}>
         <div style={{ display:"flex", alignItems:"center", gap:10 }}>
-          <span>Bienvenido {user.email}</span>
+          <span style={{ color: "#111", fontWeight: 500, fontSize: 14 }}>Bienvenido <strong>{user.email}</strong></span>
           {role === 'admin' && (
             <span style={{
               fontSize:10,

@@ -44,7 +44,7 @@ export default function KanbanBoard({
                 style={{ padding: 12, opacity: dragId === lead.id ? 0.7 : 1 }}
               >
                 <div style={{ fontSize: 13, fontWeight: 700, color: "#111", marginBottom: 4 }}>{lead.nombre || lead.whatsapp}</div>
-                <div style={{ fontSize: 10, color: "#555", marginBottom: 8 }}>{lead.curso}</div>
+                <div style={{ fontSize: 10, color: "#555", marginBottom: 8 }}>{lead.zona || "—"}</div>
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                   <span style={{ fontSize: 12, color: stage.color, fontWeight: 600 }}>{formatPeso(lead.valor)}</span>
                   <span style={{ fontSize: 10, color: "#555" }}>{getNombreVendedor(lead.asignado_a)}</span>

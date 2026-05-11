@@ -36,7 +36,7 @@ export default function Registro() {
     <div style={{ fontFamily: "'DM Mono', monospace", background: "#0e0e0e", minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center" }}>
       <style>{`@import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Bebas+Neue&display=swap');`}</style>
       <div style={{ background: "#161616", border: "1px solid #2a2a2a", borderRadius: 12, padding: 40, width: "100%", maxWidth: 400 }}>
-        <div style={{ fontFamily: "'Bebas Neue'", fontSize: 32, color: "#E8A838", letterSpacing: 3, marginBottom: 8 }}>WINDSOR CRM</div>
+        <div style={{ fontFamily: "'Bebas Neue'", fontSize: 32, color: "#E8A838", letterSpacing: 3, marginBottom: 8 }}>ANAXAGORAS CRM</div>
         <div style={{ fontSize: 12, color: "#555", marginBottom: 32, letterSpacing: 1 }}>CRM v1.0 — Crear cuenta</div>
 
         {error && <div style={{ background: "#2a0d0d", border: "1px solid #E85D3844", borderRadius: 6, padding: "10px 14px", fontSize: 12, color: "#E85D38", marginBottom: 20 }}>{error}</div>}

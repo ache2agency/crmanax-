@@ -1,26 +1,6 @@
 "use client";
 import { useState, useRef } from "react";
 
-const PROGRAMAS = [
-  { group: "Inglés", options: ["Inglés para adultos", "Inglés para niños", "Francés", "Italiano"] },
-  { group: "Licenciaturas", options: ["Licenciatura en Inglés", "Licenciatura en Inglés online", "Relaciones públicas y mercadotecnia", "Relaciones públicas y mercadotecnia online", "Administración turística", "Administración turística online", "Psicología"] },
-  { group: "Maestrías", options: ["Maestría en Innovación empresarial", "Maestría en Multiculturalidad y Plurilingüismo"] },
-  { group: "Bachillerato", options: ["Bachillerato"] },
-  { group: "Diplomados", options: [
-    "Administración de Instituciones de la Salud", "Administración de recursos humanos",
-    "Administración de restaurantes", "Análisis y Evaluación de Políticas Públicas",
-    "Comunicación y Liderazgo en el Sector Público", "Comunicación y Liderazgo empresarial",
-    "Competencias educativas", "Comunicación y Gobierno Digital", "Contabilidad",
-    "Creación y dirección de franquicias", "Ciencias del deporte", "Enfermería",
-    "Epidemiología", "Equidad de género y diversidad sexual", "Farmacología",
-    "Gamificación educativa", "Gerontología", "Innovación y Gobierno Digital",
-    "Mindfulness", "Nutrición deportiva", "Nutrición y Dietética",
-    "Políticas y Procesos de Participación Ciudadana", "Psicología criminológica",
-    "Psicología educativa", "Realidad Virtual", "Salud pública", "Tecnología educativa",
-    "Terapia ocupacional", "Tanatología", "Enseñanza del idioma inglés",
-    "Enseñanza del idioma español",
-  ]},
-];
 
 export default function LeadDetailModal({
   lead,
@@ -51,14 +31,16 @@ export default function LeadDetailModal({
     nombre: lead.nombre || "",
     email: lead.email || "",
     whatsapp: lead.whatsapp || "",
-    curso: lead.curso || "",
+    zona: lead.zona || "",
+    presupuesto: lead.presupuesto || "",
+    cuartos: lead.cuartos || "",
     valor: lead.valor || 0,
   });
 
   const currentStageId = stage?.id || lead.stage;
 
   const saveInfo = async () => {
-    const fields = ["nombre", "email", "whatsapp", "curso", "valor"];
+    const fields = ["nombre", "email", "whatsapp", "zona", "presupuesto", "cuartos", "valor"];
     for (const field of fields) {
       const val = field === "valor" ? Number(draft[field]) : draft[field];
       if (val !== (field === "valor" ? Number(lead[field]) : lead[field])) {
@@ -91,7 +73,7 @@ export default function LeadDetailModal({
                 <button
                   className="btn btn-ghost"
                   style={{ fontSize: 11, padding: "4px 10px", color: "#E8A838", border: "1px solid #E8A83844" }}
-                  onClick={() => { setDraft({ nombre: lead.nombre || "", email: lead.email || "", whatsapp: lead.whatsapp || "", curso: lead.curso || "", valor: lead.valor || 0 }); setEditingInfo(true); }}
+                  onClick={() => { setDraft({ nombre: lead.nombre || "", email: lead.email || "", whatsapp: lead.whatsapp || "", zona: lead.zona || "", presupuesto: lead.presupuesto || "", cuartos: lead.cuartos || "", valor: lead.valor || 0 }); setEditingInfo(true); }}
                 >
                   ✏️ Editar info
                 </button>
@@ -109,7 +91,9 @@ export default function LeadDetailModal({
                   { label: "NOMBRE", key: "nombre", placeholder: "Nombre completo" },
                   { label: "EMAIL", key: "email", placeholder: "correo@email.com" },
                   { label: "WHATSAPP", key: "whatsapp", placeholder: "+52 55 XXXX XXXX" },
-                  { label: "VALOR ($)", key: "valor", placeholder: "0", type: "number" },
+                  { label: "ZONA DE INTERÉS", key: "zona", placeholder: "Ej. Polanco, Roma..." },
+                  { label: "PRESUPUESTO ($)", key: "presupuesto", placeholder: "Ej. 12000" },
+                  { label: "VALOR / RENTA ($)", key: "valor", placeholder: "0", type: "number" },
                 ].map(f => (
                   <div key={f.key}>
                     <div style={{ fontSize: 10, color: "#555", letterSpacing: 1.5, marginBottom: 4 }}>{f.label}</div>
@@ -123,17 +107,17 @@ export default function LeadDetailModal({
                   </div>
                 ))}
                 <div>
-                  <div style={{ fontSize: 10, color: "#555", letterSpacing: 1.5, marginBottom: 4 }}>PROGRAMA</div>
+                  <div style={{ fontSize: 10, color: "#555", letterSpacing: 1.5, marginBottom: 4 }}>CUARTOS</div>
                   <select
                     style={{ ...fieldStyle, cursor: "pointer" }}
-                    value={draft.curso}
-                    onChange={e => setDraft(p => ({ ...p, curso: e.target.value }))}
+                    value={draft.cuartos}
+                    onChange={e => setDraft(p => ({ ...p, cuartos: e.target.value }))}
                   >
-                    {PROGRAMAS.map(g => (
-                      <optgroup key={g.group} label={g.group}>
-                        {g.options.map(o => <option key={o} value={o}>{o}</option>)}
-                      </optgroup>
-                    ))}
+                    <option value="">Sin especificar</option>
+                    <option value="1">1 cuarto (estudio)</option>
+                    <option value="2">2 cuartos</option>
+                    <option value="3">3 cuartos</option>
+                    <option value="4+">4 cuartos o más</option>
                   </select>
                 </div>
               </div>
@@ -146,8 +130,8 @@ export default function LeadDetailModal({
 
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 20 }}>
             <div style={{ background: "#1a1a1a", borderRadius: 8, padding: 14 }}>
-              <div style={{ fontSize: 10, color: "#555", letterSpacing: 1, marginBottom: 6 }}>CURSO</div>
-              <div style={{ fontSize: 13, color: "#e0e0e0" }}>{lead.curso}</div>
+              <div style={{ fontSize: 10, color: "#555", letterSpacing: 1, marginBottom: 6 }}>ZONA</div>
+              <div style={{ fontSize: 13, color: "#e0e0e0" }}>{lead.zona || "—"}</div>
             </div>
             <div style={{ background: "#1a1a1a", borderRadius: 8, padding: 14 }}>
               <div style={{ fontSize: 10, color: "#555", letterSpacing: 1, marginBottom: 6 }}>VALOR</div>

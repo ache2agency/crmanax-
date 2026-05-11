@@ -11,70 +11,47 @@ import NewLeadModal from "@/components/crm/NewLeadModal";
 const supabase = createClient();
 
 const STAGES = [
-  { id: "primer_contacto", label: "📞 Primer contacto", color: "#2C4A8C", bg: "#eef2fb" },
-  { id: "examen_ubicacion", label: "📝 Examen de ubicación", color: "#b45309", bg: "#fef3c7" },
-  { id: "clase_muestra", label: "🎓 Clase muestra", color: "#A8263C", bg: "#fee2e8" },
-  { id: "segundo_contacto", label: "🔁 Segundo contacto", color: "#7c3aed", bg: "#ede9fe" },
-  { id: "promocion_enviada", label: "🏷️ Promoción enviada", color: "#c2410c", bg: "#ffedd5" },
-  { id: "tercer_contacto", label: "📲 Tercer contacto", color: "#2C4A8C", bg: "#dbeafe" },
-  { id: "inscripcion_pendiente", label: "📋 Inscripción pendiente", color: "#92400e", bg: "#fef9c3" },
-  { id: "inscrito", label: "✅ Inscrito", color: "#15803d", bg: "#dcfce7" },
-  { id: "perdido", label: "❌ Perdido", color: "#64748b", bg: "#f1f5f9" },
-  { id: "archivado", label: "📦 Archivado", color: "#94a3b8", bg: "#f8fafc" },
+  { id: "interesado", label: "🔍 Interesado", color: "#2C4A8C", bg: "#eef2fb" },
+  { id: "en_proceso", label: "⚙️ En proceso", color: "#b45309", bg: "#fef3c7" },
+  { id: "rentado", label: "✅ Rentado", color: "#15803d", bg: "#dcfce7" },
+  { id: "no_interesado", label: "❌ No interesado", color: "#64748b", bg: "#f1f5f9" },
 ];
 
 const LEGACY_STAGE_MAP = {
-  nuevo: "primer_contacto",
-  contactado: "primer_contacto",
-  interesado: "segundo_contacto",
-  propuesta: "inscripcion_pendiente",
-  cerrado: "inscrito",
+  nuevo: "interesado",
+  contactado: "interesado",
+  interesado: "interesado",
+  propuesta: "en_proceso",
+  cerrado: "rentado",
+  inscrito: "rentado",
+  perdido: "no_interesado",
+  archivado: "no_interesado",
+  primer_contacto: "interesado",
+  examen_ubicacion: "en_proceso",
+  clase_muestra: "en_proceso",
+  segundo_contacto: "en_proceso",
+  promocion_enviada: "en_proceso",
+  tercer_contacto: "en_proceso",
+  inscripcion_pendiente: "en_proceso",
 };
-
-const CURSOS = ["Inglés para niños", "Inglés para adultos", "Licenciaturas", "Maestrías", "Diplomados"];
 const SESSION_HOURS = 12;
 const formatPeso = (v) => `$${Number(v).toLocaleString("es-MX")}`;
 const todayCST = () => new Date().toLocaleDateString("en-CA", { timeZone: "America/Mexico_City" });
 
 const WA_TEMPLATES = {
-  primer_contacto: (nombre, curso) => `Hola ${nombre}. Gracias por tu interés en *${curso}* en Instituto Windsor. Con gusto te orientamos sobre el siguiente paso.`,
-  examen_ubicacion: (nombre, curso) => `Hola ${nombre}. Te doy seguimiento con tu proceso de *${curso}*. Si quieres, avanzamos con tu examen de ubicación.`,
-  clase_muestra: (nombre, curso) => `Hola ${nombre}. Seguimos atentos con tu proceso de *${curso}*. Si te parece, avanzamos con tu clase muestra.`,
-  segundo_contacto: (nombre, curso) => `Hola ${nombre}. Te doy seguimiento sobre *${curso}*. Si quieres, te ayudo a resolver dudas y avanzar.`,
-  promocion_enviada: (nombre, curso) => `${nombre}, ya te compartimos la promoción vigente para *${curso}*. Si deseas, te apoyo con el siguiente paso.`,
-  tercer_contacto: (nombre, curso) => `Hola ${nombre}. Retomo tu proceso de *${curso}* para saber si aún te interesa avanzar con Instituto Windsor.`,
-  inscripcion_pendiente: (nombre, curso) => `${nombre}, tu proceso de *${curso}* está listo para inscripción. Si deseas, te ayudo a cerrarlo hoy mismo.`,
-  inscrito: (nombre, curso) => `¡Felicidades ${nombre}! Tu inscripción en *${curso}* quedó confirmada con Instituto Windsor.`,
+  interesado: (nombre) => `Hola ${nombre}. Gracias por tu interés en Anaxagoras. Con gusto te compartimos información sobre nuestros departamentos disponibles y te orientamos en el siguiente paso.`,
+  en_proceso: (nombre) => `Hola ${nombre}. Te doy seguimiento sobre el departamento que te interesó. ¿Tienes alguna duda o quieres agendar una visita?`,
+  rentado: (nombre) => `¡Bienvenido ${nombre}! Tu contrato de renta quedó confirmado. Estaremos en contacto para coordinar tu llegada.`,
+  no_interesado: (nombre) => `Hola ${nombre}. Gracias por tu tiempo. Si en algún momento reconsideras o tienes alguna pregunta, estamos aquí para ayudarte.`,
 };
 
-const normalizeStage = (stage) => LEGACY_STAGE_MAP[stage] || stage || "primer_contacto";
+const normalizeStage = (stage) => LEGACY_STAGE_MAP[stage] || stage || "interesado";
 const AGENDAR_LINK = "https://crmanax.vercel.app/agendar/";
 
 const getInfoTemplateForLead = (lead) => {
-  const nombre = lead?.nombre?.split(" ")[0] || "Hola";
-  const curso = String(lead?.curso || "").toLowerCase();
-
-  if (curso.includes("niños")) {
-    return `Hola ${nombre}. Gracias por tu interés en *Inglés para niños* en Instituto Windsor. Te comparto información general: trabajamos por niveles, con acompañamiento cercano y un enfoque práctico para desarrollar comprensión y conversación. Si deseas, con gusto te apoyamos con *examen de ubicación* y *clase muestra*.`;
-  }
-
-  if (curso.includes("adultos") || curso.includes("ingles")) {
-    return `Hola ${nombre}. Gracias por tu interés en *Inglés para adultos* en Instituto Windsor. Te comparto información general: avance por niveles, enfoque conversacional y práctica constante para usar el idioma en contextos reales. Si deseas, con gusto te apoyamos con *examen de ubicación* y *clase muestra*.`;
-  }
-
-  if (curso.includes("licenciatura")) {
-    return `Hola ${nombre}. Gracias por tu interés en *Licenciaturas* en Instituto Windsor. Con gusto te compartimos información general sobre el proceso de admisión, orientación académica y acompañamiento para ayudarte a elegir la mejor opción. Si deseas, podemos continuar con *promoción vigente* e *inscripción*.`;
-  }
-
-  if (curso.includes("maestr")) {
-    return `Hola ${nombre}. Gracias por tu interés en *Maestrías* en Instituto Windsor. Con gusto te compartimos información general sobre admisión, orientación académica y acompañamiento para revisar la opción que mejor se ajuste a tu perfil. Si deseas, podemos continuar con *promoción vigente* e *inscripción*.`;
-  }
-
-  if (curso.includes("diplomado")) {
-    return `Hola ${nombre}. Gracias por tu interés en *Diplomados* en Instituto Windsor. Con gusto te compartimos información general sobre nuestras opciones de formación práctica y actualización profesional. Si deseas, podemos continuar con *promoción vigente* e *inscripción*.`;
-  }
-
-  return `Hola ${nombre}. Gracias por tu interés en Instituto Windsor. Con gusto te compartimos información general del programa que nos solicitaste. Si deseas, también podemos ayudarte con el siguiente paso desde aquí: ${AGENDAR_LINK}`;
+  const nombre = lead?.nombre?.split(" ")[0] || "estimado/a";
+  const zona = lead?.zona ? ` en *${lead.zona}*` : "";
+  return `Hola ${nombre}. Gracias por tu interés en Anaxagoras${zona}. Con gusto te compartimos información sobre los departamentos disponibles, precios y condiciones de renta. Si deseas, podemos agendar una visita: ${AGENDAR_LINK}`;
 };
 
 
@@ -94,7 +71,7 @@ export default function CRM() {
   const [currentUser, setCurrentUser] = useState(null);
   const [currentProfile, setCurrentProfile] = useState(null);
   const [vendedores, setVendedores] = useState([]);
-  const [newLead, setNewLead] = useState({ nombre: "", email: "", whatsapp: "", curso: CURSOS[0], valor: "", notas: "", asignado_a: "" });
+  const [newLead, setNewLead] = useState({ nombre: "", email: "", whatsapp: "", zona: "", presupuesto: "", cuartos: "", fecha_entrada: "", valor: "", notas: "", asignado_a: "" });
   const [chatOpen, setChatOpen] = useState(false);
   const [chatMessages, setChatMessages] = useState([
     {
@@ -149,7 +126,7 @@ export default function CRM() {
   const [labWalkinData, setLabWalkinData] = useState({
     nombre: "",
     email: "",
-    programa: CURSOS[0],
+    zona: "",
     whatsapp: "",
   });
   const [labState, setLabState] = useState({
@@ -408,7 +385,7 @@ export default function CRM() {
       return;
     }
     setLeadInfoDraft(getInfoTemplateForLead(selectedLead));
-  }, [selectedLead?.id, selectedLead?.curso]);
+  }, [selectedLead?.id, selectedLead?.zona]);
 
   const loadUser = async () => {
     const { data: { user } } = await supabase.auth.getUser();
@@ -464,7 +441,7 @@ export default function CRM() {
   const fetchCitas = async (userId, admin) => {
     let query = supabase
       .from("citas")
-      .select("*, leads(nombre, email, whatsapp, curso, notas)")
+      .select("*, leads(nombre, email, whatsapp, zona, notas)")
       .order("fecha", { ascending: true })
       .order("hora", { ascending: true });
 
@@ -546,7 +523,7 @@ export default function CRM() {
             match: "hola",
             type: "fixed",
             answer:
-              "¡Hola! 👋 Soy el asistente de Instituto Windsor. ¿Te interesa conocer nuestros programas educativos? Responde SÍ para más información.",
+              "¡Hola! 👋 Soy el asistente de Anaxagoras. ¿Te interesa conocer nuestros departamentos disponibles? Responde SÍ para más información.",
           },
           {
             match: "precio",
@@ -759,13 +736,13 @@ export default function CRM() {
     if (!leadId) return;
     const { error } = await supabase.from("leads").update({ stage }).eq("id", leadId);
     if (error) { showToast("Error cerrando lead", "error"); return; }
-    await logLeadActivity({ leadId, eventType: "stage_changed", title: stage === "inscrito" ? "Lead inscrito" : "Lead perdido", detail: motivo || "" });
+    await logLeadActivity({ leadId, eventType: "stage_changed", title: stage === "rentado" ? "Departamento rentado" : "Lead no interesado", detail: motivo || "" });
     // Cerrar conversación si hay una abierta
     if (selectedConv) {
-      await supabase.from("whatsapp_conversaciones").update({ estado: "cerrada", fase: stage === "inscrito" ? "cerrado" : "perdido" }).eq("id", selectedConv.id);
+      await supabase.from("whatsapp_conversaciones").update({ estado: "cerrada", fase: stage === "rentado" ? "cerrado" : "perdido" }).eq("id", selectedConv.id);
     }
     setLeads(prev => prev.map(l => l.id === leadId ? { ...l, stage } : l));
-    showToast(stage === "inscrito" ? "Lead marcado como inscrito" : "Lead marcado como perdido");
+    showToast(stage === "rentado" ? "Departamento rentado ✓" : "Lead marcado como no interesado");
   };
 
   /** Si estamos en una conv en modo humano y el usuario va a salir, pide confirmar. Aceptar = pasar a BOT y ejecutar callback; Cancelar = no hacer nada. */
@@ -1043,20 +1020,14 @@ export default function CRM() {
       .sort((a, b) => `${a.fecha} ${a.hora}`.localeCompare(`${b.fecha} ${b.hora}`))[0];
 
     if (upcomingCita) {
-      return `Confirmar ${upcomingCita.tipo === "clase_prueba" ? "clase muestra" : upcomingCita.tipo === "asesoria" ? "asesoría" : upcomingCita.tipo === "examen_ubicacion" ? "examen de ubicación" : "proceso de inscripción"} del ${upcomingCita.fecha} a las ${upcomingCita.hora?.slice(0, 5) || "hora pendiente"}.`;
+      return `Confirmar visita al departamento del ${upcomingCita.fecha} a las ${upcomingCita.hora?.slice(0, 5) || "hora pendiente"}.`;
     }
-    if (relatedConv?.fase === "dudas") return "Responder dudas y llevar al prospecto al siguiente paso.";
-    if (relatedConv?.fase === "accion" || relatedConv?.fase === "seguimiento") return "Cerrar con CTA claro: asesoría, examen de ubicación o inscripción.";
-    if (currentStage === "primer_contacto") return "Hacer primer contacto y confirmar interés real.";
-    if (currentStage === "examen_ubicacion") return "Invitar o confirmar examen de ubicación.";
-    if (currentStage === "clase_muestra") return "Agendar o confirmar clase muestra.";
-    if (currentStage === "segundo_contacto") return "Dar segundo seguimiento y resolver dudas pendientes.";
-    if (currentStage === "promocion_enviada") return "Confirmar recepción de la promoción y medir interés.";
-    if (currentStage === "tercer_contacto") return "Hacer último seguimiento comercial antes de archivar.";
-    if (currentStage === "inscripcion_pendiente") return "Cerrar inscripción y acompañar el proceso administrativo.";
-    if (currentStage === "inscrito") return "Mantener seguimiento post-inscripción.";
-    if (currentStage === "perdido") return "Revisar si conviene reactivar más adelante.";
-    if (currentStage === "archivado") return "Lead archivado; reactivar solo si vuelve a mostrar interés.";
+    if (relatedConv?.fase === "dudas") return "Responder dudas y llevar al prospecto a agendar visita.";
+    if (relatedConv?.fase === "accion" || relatedConv?.fase === "seguimiento") return "Cerrar con CTA claro: agendar visita o enviar contrato.";
+    if (currentStage === "interesado") return "Hacer primer contacto, confirmar interés y agendar visita.";
+    if (currentStage === "en_proceso") return "Dar seguimiento, resolver dudas y avanzar hacia el contrato.";
+    if (currentStage === "rentado") return "Coordinar entrega de llaves y firma de contrato.";
+    if (currentStage === "no_interesado") return "Revisar si conviene reactivar más adelante.";
     return "Actualizar siguiente paso comercial.";
   };
 
@@ -1072,16 +1043,10 @@ export default function CRM() {
 
   const getConversationPhaseForStage = (stage) => {
     const map = {
-      primer_contacto: "saludo",
-      examen_ubicacion: "accion",
-      clase_muestra: "accion",
-      segundo_contacto: "seguimiento",
-      promocion_enviada: "seguimiento",
-      tercer_contacto: "seguimiento",
-      inscripcion_pendiente: "accion",
-      inscrito: "cerrado",
-      perdido: "perdido",
-      archivado: "seguimiento",
+      interesado: "saludo",
+      en_proceso: "accion",
+      rentado: "cerrado",
+      no_interesado: "perdido",
     };
     return map[normalizeStage(stage)] || null;
   };
@@ -1150,7 +1115,7 @@ export default function CRM() {
     const lead = {
       ...newLead,
       whatsapp: normalizarWhatsapp(newLead.whatsapp),
-      stage: "primer_contacto",
+      stage: "interesado",
       fecha: todayCST(),
       valor: Number(newLead.valor) || 0,
       user_id: currentUser.id,
@@ -1163,11 +1128,11 @@ export default function CRM() {
       leadId: data[0].id,
       eventType: "lead_created",
       title: "Lead creado manualmente",
-      detail: `${data[0].nombre} · ${data[0].curso}`,
+      detail: `${data[0].nombre} · ${data[0].zona || "sin zona"}`,
       meta: { source: "crm_manual" },
     });
     setShowForm(false);
-    setNewLead({ nombre: "", email: "", whatsapp: "", curso: CURSOS[0], valor: "", notas: "", asignado_a: currentUser.id });
+    setNewLead({ nombre: "", email: "", whatsapp: "", zona: "", presupuesto: "", cuartos: "", fecha_entrada: "", valor: "", notas: "", asignado_a: currentUser.id });
     showToast("Lead agregado ✓");
     if (data[0].whatsapp) {
       fetch("/api/whatsapp/bienvenida", {
@@ -1228,13 +1193,13 @@ export default function CRM() {
 
   const getNombreVendedor = (id) => vendedores.find(v => v.id === id)?.nombre || vendedores.find(v => v.id === id)?.email?.split("@")[0] || "—";
 
-  const totalRevenue = leads.filter((l) => normalizeStage(l.stage) === "inscrito").reduce((a, b) => a + b.valor, 0);
-  const pipelineValue = leads.filter((l) => !["inscrito", "perdido", "archivado"].includes(normalizeStage(l.stage))).reduce((a, b) => a + b.valor, 0);
-  const convRate = leads.length ? Math.round((leads.filter((l) => normalizeStage(l.stage) === "inscrito").length / leads.length) * 100) : 0;
+  const totalRevenue = leads.filter((l) => normalizeStage(l.stage) === "rentado").reduce((a, b) => a + b.valor, 0);
+  const pipelineValue = leads.filter((l) => !["rentado", "no_interesado"].includes(normalizeStage(l.stage))).reduce((a, b) => a + b.valor, 0);
+  const convRate = leads.length ? Math.round((leads.filter((l) => normalizeStage(l.stage) === "rentado").length / leads.length) * 100) : 0;
 
   const openWA = (lead) => {
-    const template = WA_TEMPLATES[normalizeStage(lead.stage)] || WA_TEMPLATES["primer_contacto"];
-    const msg = encodeURIComponent(template((lead.nombre || '').split(" ")[0] || 'estimado/a', lead.curso));
+    const template = WA_TEMPLATES[normalizeStage(lead.stage)] || WA_TEMPLATES["interesado"];
+    const msg = encodeURIComponent(template((lead.nombre || '').split(" ")[0] || 'estimado/a'));
     const num = lead.whatsapp.replace(/\D/g, "");
     window.open(`https://wa.me/${num}?text=${msg}`, "_blank");
   };
@@ -1348,7 +1313,7 @@ export default function CRM() {
       id: l.id,
       nombre: l.nombre,
       email: l.email,
-      curso: l.curso,
+      zona: l.zona,
       stage: l.stage,
       valor: l.valor,
       asignado_id: l.asignado_a || null,
@@ -1413,8 +1378,8 @@ export default function CRM() {
 
     const openingMessage =
       labScenario === "walkin"
-        ? `Hola ${labWalkinData.nombre || ""}, soy el asistente de Instituto Windsor. Ya tenemos tu registro de interés en *${labWalkinData.programa || "el programa"}*. ¿Tienes alguna duda o quieres saber el siguiente paso?`
-        : "Hola, gracias por comunicarte con Instituto Windsor. ¿Me compartes tu nombre, por favor?";
+        ? `Hola ${labWalkinData.nombre || ""}, soy el asistente de Anaxagoras. Ya tenemos tu registro de interés en *${labWalkinData.zona || "nuestros departamentos"}*. ¿Tienes alguna duda o quieres saber el siguiente paso?`
+        : "Hola, gracias por comunicarte con Anaxagoras. ¿Me compartes tu nombre, por favor?";
 
     setLabState(initialState);
     setLabMessages([{ role: "assistant", content: openingMessage }]);
@@ -1529,7 +1494,7 @@ export default function CRM() {
           .mobile-only { display: flex !important; align-items: center; gap: 8px; }
           .crm-tagline { display: none !important; }
           .crm-admin-badge { display: none !important; }
-          .crm-title { font-size: 22px !important; }
+          .crm-title { font-size: 20px !important; white-space: nowrap; }
           .mobile-menu { display: flex; flex-direction: column; position: absolute; top: 100%; left: 0; right: 0; background: #2C4A8C; border-bottom: 2px solid rgba(200,16,46,0.4); box-shadow: 0 8px 24px rgba(0,0,0,0.2); z-index: 400; padding: 8px 0; }
           .mobile-menu .nav-btn { text-align: left; padding: 12px 20px; border-radius: 0; font-size: 13px; border-bottom: 1px solid rgba(255,255,255,0.1); }
           .mobile-menu .nav-btn:last-child { border-bottom: none; }
@@ -1550,7 +1515,7 @@ export default function CRM() {
       <div style={{ borderBottom: "1px solid rgba(255,255,255,0.15)", padding: "0 24px", position: "sticky", top: 0, zIndex: 300, background: "#2C4A8C", overflow: "visible", flexShrink: 0 }}>
         <div style={{ maxWidth: 1400, margin: "0 auto", display: "flex", alignItems: "center", justifyContent: "space-between", height: 60 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            <span className="crm-title" style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 28, letterSpacing: 3, color: "#ffffff" }}>WINDSOR CRM</span>
+            <span className="crm-title" style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 20, letterSpacing: 2, color: "#ffffff", whiteSpace: "nowrap" }}>ANAXAGORAS CRM</span>
             <span className="crm-tagline" style={{ fontSize: 11, color: "rgba(255,255,255,0.5)", letterSpacing: 2 }}>CRM v1.0</span>
             {isAdmin && <span className="admin-badge crm-admin-badge">ADMIN</span>}
           </div>
@@ -1626,8 +1591,8 @@ export default function CRM() {
           {/* Stats compactas */}
           <div className="stat-card-grid" style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginBottom: 10 }}>
             {[
-              { label: "PIPELINE TOTAL", value: formatPeso(pipelineValue), sub: `${filteredLeads.filter((l) => !["inscrito","perdido","archivado"].includes(normalizeStage(l.stage))).length} activos`, color: "#4A90D9" },
-              { label: "INSCRITOS", value: formatPeso(totalRevenue), sub: `${leads.filter((l) => normalizeStage(l.stage) === "inscrito").length} cierres`, color: "#27AE60" },
+              { label: "PIPELINE TOTAL", value: formatPeso(pipelineValue), sub: `${filteredLeads.filter((l) => !["rentado","no_interesado"].includes(normalizeStage(l.stage))).length} activos`, color: "#4A90D9" },
+              { label: "RENTADOS", value: formatPeso(totalRevenue), sub: `${leads.filter((l) => normalizeStage(l.stage) === "rentado").length} cierres`, color: "#27AE60" },
               { label: "TASA DE CIERRE", value: `${convRate}%`, sub: `de ${leads.length} totales`, color: "#E8A838" },
               { label: "LEADS HOY", value: leads.filter(l => l.fecha === todayCST()).length, sub: "nuevos ingresos", color: "#E85D38" },
             ].map((s, i) => (
@@ -1639,24 +1604,24 @@ export default function CRM() {
             ))}
           </div>
 
-          {/* Desglose por oferta educativa */}
+          {/* Desglose por zona */}
           {(() => {
-            const activos = leads.filter(l => !["inscrito","perdido","archivado"].includes(normalizeStage(l.stage)));
+            const activos = leads.filter(l => !["rentado","no_interesado"].includes(normalizeStage(l.stage)));
             const conteo = {};
             activos.forEach(l => {
-              const prog = l.curso && l.curso !== "WhatsApp - Instituto Windsor" ? l.curso : null;
-              if (prog) conteo[prog] = (conteo[prog] || 0) + 1;
+              const zona = l.zona || null;
+              if (zona) conteo[zona] = (conteo[zona] || 0) + 1;
             });
             const items = Object.entries(conteo).sort((a,b) => b[1]-a[1]);
             if (items.length === 0) return null;
             const COLORES = ["#4A90D9","#A8263C","#27AE60","#E8A838","#7B5EA7","#0891B2","#D97706","#E85D38"];
             return (
               <div style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 10, padding: "8px 14px", display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
-                <span style={{ fontSize: 9, color: "#888", letterSpacing: 1.5, textTransform: "uppercase", marginRight: 4 }}>Por programa</span>
-                {items.map(([prog, n], i) => (
-                  <span key={prog} style={{ display: "inline-flex", alignItems: "center", gap: 5, background: COLORES[i % COLORES.length] + "15", border: `1px solid ${COLORES[i % COLORES.length]}40`, borderRadius: 20, padding: "3px 10px", fontSize: 11, color: "#1a1a1a" }}>
+                <span style={{ fontSize: 9, color: "#888", letterSpacing: 1.5, textTransform: "uppercase", marginRight: 4 }}>Por zona</span>
+                {items.map(([zona, n], i) => (
+                  <span key={zona} style={{ display: "inline-flex", alignItems: "center", gap: 5, background: COLORES[i % COLORES.length] + "15", border: `1px solid ${COLORES[i % COLORES.length]}40`, borderRadius: 20, padding: "3px 10px", fontSize: 11, color: "#1a1a1a" }}>
                     <span style={{ width: 7, height: 7, borderRadius: "50%", background: COLORES[i % COLORES.length], flexShrink: 0 }} />
-                    {prog}
+                    {zona}
                     <strong style={{ color: COLORES[i % COLORES.length] }}>{n}</strong>
                   </span>
                 ))}
@@ -1677,9 +1642,9 @@ export default function CRM() {
           <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 12 }}>
             <span style={{ fontSize: 12, color: "#555" }}>{filteredLeads.length} leads mostrados</span>
             <button className="btn btn-ghost" style={{ fontSize: 11 }} onClick={() => {
-              const headers = ["Nombre","Email","WhatsApp","Programa","Stage","Fecha","Valor","Notas"];
+              const headers = ["Nombre","Email","WhatsApp","Zona","Cuartos","Presupuesto","Stage","Fecha","Valor","Notas"];
               const rows = filteredLeads.map(l => [
-                l.nombre||"", l.email||"", l.whatsapp||"", l.curso||"",
+                l.nombre||"", l.email||"", l.whatsapp||"", l.zona||"", l.cuartos||"", l.presupuesto||"",
                 normalizeStage(l.stage)||"", l.fecha||"", l.valor||"", (l.notas||"").replace(/\n/g," ")
               ]);
               const csv = [headers, ...rows].map(r => r.map(v => `"${String(v).replace(/"/g,'""')}"`).join(",")).join("\n");
@@ -1689,7 +1654,7 @@ export default function CRM() {
             }}>⬇ CSV</button>
             {isAdmin && (
               <button className="btn btn-ghost" style={{ fontSize: 11 }} onClick={async () => {
-                const { error } = await supabase.from("leads").update({ stage: "primer_contacto" }).is("stage", null);
+                const { error } = await supabase.from("leads").update({ stage: "interesado" }).is("stage", null);
                 if (error) { showToast("Error moviendo leads", "error"); return; }
                 await fetchLeads(); showToast("Leads sin stage movidos a Primer contacto");
               }}>🔧 Fix huérfanos</button>
@@ -1848,7 +1813,7 @@ export default function CRM() {
             <textarea
               value={botPrompt}
               onChange={(e) => setBotPrompt(e.target.value)}
-              placeholder={`Eres el asistente de admisiones de Instituto Windsor por WhatsApp. Debes hablar de forma amable, clara, breve e institucional. Tu objetivo es orientar al prospecto, identificar su interés y llevarlo al siguiente paso. No inventes información. Si no sabes algo, dilo con honestidad y ofrece apoyo humano. Si el usuario pide asesor, deja la conversación lista para seguimiento.`}
+              placeholder={`Eres el asistente de Anaxagoras por WhatsApp. Ayudas a prospectos que buscan departamento en renta. Habla de forma amable, clara y breve. Tu objetivo es identificar qué busca el prospecto (zona, cuartos, presupuesto) y agendar una visita. No inventes información. Si no sabes algo, dilo con honestidad y ofrece apoyo humano.`}
               rows={14}
               style={{
                 width: "100%",
@@ -1927,7 +1892,7 @@ export default function CRM() {
                       value={labWalkinData.programa}
                       onChange={(e) => setLabWalkinData((prev) => ({ ...prev, programa: e.target.value }))}
                     >
-                      {CURSOS.map((c) => <option key={c}>{c}</option>)}
+                      <option value="">Sin especificar</option>
                     </select>
                     <input
                       className="input"

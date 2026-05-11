@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 
 const SYSTEM_PROMPT =
-  'Eres un asistente comercial para Instituto Windsor. Ayudas al equipo de admisiones y seguimiento a priorizar prospectos, dar mejor acompañamiento y convertir interesados en alumnos. Cuando te compartan información de leads, analiza el contexto y da recomendaciones concretas.'
+  'Eres un asistente comercial para Anaxagoras, empresa de renta de departamentos. Ayudas al equipo de asesores a priorizar prospectos, dar mejor seguimiento y cerrar contratos de renta. Cuando te compartan información de leads, analiza el contexto y da recomendaciones concretas.'
 
 export async function POST(request: Request) {
   try {
