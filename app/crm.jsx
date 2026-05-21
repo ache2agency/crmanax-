@@ -11,41 +11,49 @@ import NewLeadModal from "@/components/crm/NewLeadModal";
 const supabase = createClient();
 
 const STAGES = [
-  { id: "interesado", label: "🔍 Interesado", color: "#2C4A8C", bg: "#eef2fb" },
-  { id: "en_proceso", label: "⚙️ En proceso", color: "#b45309", bg: "#fef3c7" },
-  { id: "rentado", label: "✅ Rentado", color: "#15803d", bg: "#dcfce7" },
-  { id: "no_interesado", label: "❌ No interesado", color: "#64748b", bg: "#f1f5f9" },
+  { id: "nuevo_contacto",     label: "Nuevo contacto",     color: "#6b7280", bg: "#f9fafb" },
+  { id: "cotizado",           label: "Cotizado",            color: "#2563eb", bg: "#eff6ff" },
+  { id: "deposito_pendiente", label: "Deposito pendiente",  color: "#d97706", bg: "#fffbeb" },
+  { id: "reservado",          label: "Reservado",           color: "#7c3aed", bg: "#f5f3ff" },
+  { id: "hospedado",          label: "Hospedado",           color: "#0891b2", bg: "#ecfeff" },
+  { id: "completado",         label: "Completado",          color: "#15803d", bg: "#f0fdf4" },
+  { id: "no_interesado",      label: "No interesado",       color: "#64748b", bg: "#f1f5f9" },
 ];
 
 const LEGACY_STAGE_MAP = {
-  nuevo: "interesado",
-  contactado: "interesado",
-  interesado: "interesado",
-  propuesta: "en_proceso",
-  cerrado: "rentado",
-  inscrito: "rentado",
-  perdido: "no_interesado",
-  archivado: "no_interesado",
-  primer_contacto: "interesado",
-  examen_ubicacion: "en_proceso",
-  clase_muestra: "en_proceso",
-  segundo_contacto: "en_proceso",
-  promocion_enviada: "en_proceso",
-  tercer_contacto: "en_proceso",
-  inscripcion_pendiente: "en_proceso",
+  interesado:            "nuevo_contacto",
+  en_proceso:            "cotizado",
+  rentado:               "completado",
+  nuevo:                 "nuevo_contacto",
+  contactado:            "nuevo_contacto",
+  propuesta:             "cotizado",
+  cerrado:               "completado",
+  inscrito:              "completado",
+  perdido:               "no_interesado",
+  archivado:             "no_interesado",
+  primer_contacto:       "nuevo_contacto",
+  examen_ubicacion:      "cotizado",
+  clase_muestra:         "cotizado",
+  segundo_contacto:      "cotizado",
+  promocion_enviada:     "cotizado",
+  tercer_contacto:       "cotizado",
+  inscripcion_pendiente: "deposito_pendiente",
 };
 const SESSION_HOURS = 12;
 const formatPeso = (v) => `$${Number(v).toLocaleString("es-MX")}`;
 const todayCST = () => new Date().toLocaleDateString("en-CA", { timeZone: "America/Mexico_City" });
 
 const WA_TEMPLATES = {
-  interesado: (nombre) => `Hola ${nombre}. Gracias por tu interés en Anaxagoras. Con gusto te compartimos información sobre nuestros departamentos disponibles y te orientamos en el siguiente paso.`,
-  en_proceso: (nombre) => `Hola ${nombre}. Te doy seguimiento sobre el departamento que te interesó. ¿Tienes alguna duda o quieres agendar una visita?`,
-  rentado: (nombre) => `¡Bienvenido ${nombre}! Tu contrato de renta quedó confirmado. Estaremos en contacto para coordinar tu llegada.`,
-  no_interesado: (nombre) => `Hola ${nombre}. Gracias por tu tiempo. Si en algún momento reconsideras o tienes alguna pregunta, estamos aquí para ayudarte.`,
+  nuevo_contacto:     (nombre) => `¡Hola! Qué bueno que nos contactas. Gracias por tu interés en Anaxágoras 41. Para poder darte la mejor información, ayúdame con: tu nombre, las fechas que te interesan y cuántas personas se alojarían.`,
+  cotizado:           (nombre) => `Hola ${nombre}. Te doy seguimiento a la cotización. ¿Tienes alguna duda sobre el loft o las fechas?`,
+  deposito_pendiente: (nombre) => `Hola ${nombre}. Para apartar el loft y las fechas necesitamos el depósito en garantía. ¿Cómo te queda?`,
+  reservado:          (nombre) => `¡Hola ${nombre}! Tu reserva está confirmada. Te enviaremos toda la información que necesitas para tu llegada.`,
+  hospedado:          (nombre) => `¡Hola ${nombre}! Esperamos que estés disfrutando tu estancia en Anaxágoras 41. Estamos para lo que necesites.`,
+  completado:         (nombre) => `¡Hola ${nombre}! Fue un placer tenerte en Anaxágoras 41. ¿Nos ayudarías con una reseña? Tu opinión es muy importante para nosotros.`,
+  no_interesado:      (nombre) => `Hola ${nombre}. Gracias por tu tiempo. Si en algún momento reconsideras, estamos aquí para ayudarte.`,
 };
 
-const normalizeStage = (stage) => LEGACY_STAGE_MAP[stage] || stage || "interesado";
+const normalizeStage = (stage) => LEGACY_STAGE_MAP[stage] || stage || "nuevo_contacto";
 const AGENDAR_LINK = "https://crmanax.vercel.app/agendar/";
 
 const getInfoTemplateForLead = (lead) => {
@@ -71,7 +79,8 @@ export default function CRM() {
   const [currentUser, setCurrentUser] = useState(null);
   const [currentProfile, setCurrentProfile] = useState(null);
   const [vendedores, setVendedores] = useState([]);
-  const [newLead, setNewLead] = useState({ nombre: "", email: "", whatsapp: "", zona: "", presupuesto: "", cuartos: "", fecha_entrada: "", valor: "", notas: "", asignado_a: "" });
+  const [lofts, setLofts] = useState([]);
+  const [newLead, setNewLead] = useState({ nombre: "", email: "", whatsapp: "", tipo_renta: "noche", fecha_checkin: "", fecha_checkout: "", num_personas: 1, loft_id: "", presupuesto: "", valor: "", notas: "", asignado_a: "" });
   const [chatOpen, setChatOpen] = useState(false);
   const [chatMessages, setChatMessages] = useState([
     {
@@ -423,6 +432,12 @@ export default function CRM() {
     fetchLeads(user.id, profile?.rol === "admin");
     fetchCitas(user.id, profile?.rol === "admin");
     fetchWhatsConvs();
+    fetchLofts();
+  };
+
+  const fetchLofts = async () => {
+    const { data } = await supabase.from("lofts").select("id, nombre, tipo").eq("activo", true).order("nombre");
+    setLofts(data || []);
   };
 
   const fetchLeads = async (userId, admin) => {
@@ -1022,12 +1037,13 @@ export default function CRM() {
     if (upcomingCita) {
       return `Confirmar visita al departamento del ${upcomingCita.fecha} a las ${upcomingCita.hora?.slice(0, 5) || "hora pendiente"}.`;
     }
-    if (relatedConv?.fase === "dudas") return "Responder dudas y llevar al prospecto a agendar visita.";
-    if (relatedConv?.fase === "accion" || relatedConv?.fase === "seguimiento") return "Cerrar con CTA claro: agendar visita o enviar contrato.";
-    if (currentStage === "interesado") return "Hacer primer contacto, confirmar interés y agendar visita.";
-    if (currentStage === "en_proceso") return "Dar seguimiento, resolver dudas y avanzar hacia el contrato.";
-    if (currentStage === "rentado") return "Coordinar entrega de llaves y firma de contrato.";
-    if (currentStage === "no_interesado") return "Revisar si conviene reactivar más adelante.";
+    if (currentStage === "nuevo_contacto")     return "Confirmar interés, pedir fechas de estancia y número de personas.";
+    if (currentStage === "cotizado")           return "Dar seguimiento a la cotización. Resolver dudas del cliente.";
+    if (currentStage === "deposito_pendiente") return "Recordar al cliente que envíe el depósito de garantía para apartar loft y fechas.";
+    if (currentStage === "reservado")          return "Fechas bloqueadas. Verificar que la secuencia de mensajes esté programada.";
+    if (currentStage === "hospedado")          return "Cliente hospedado. Estar al pendiente de cualquier necesidad.";
+    if (currentStage === "completado")         return "Solicitar reseña en Google y procesar devolución del depósito de garantía.";
+    if (currentStage === "no_interesado")      return "Revisar si conviene reactivar más adelante.";
     return "Actualizar siguiente paso comercial.";
   };
 
@@ -1115,9 +1131,11 @@ export default function CRM() {
     const lead = {
       ...newLead,
       whatsapp: normalizarWhatsapp(newLead.whatsapp),
-      stage: "interesado",
+      stage: "nuevo_contacto",
       fecha: todayCST(),
       valor: Number(newLead.valor) || 0,
+      num_personas: Number(newLead.num_personas) || 1,
+      loft_id: newLead.loft_id || null,
       user_id: currentUser.id,
       asignado_a: newLead.asignado_a || currentUser.id,
     };
@@ -1132,7 +1150,7 @@ export default function CRM() {
       meta: { source: "crm_manual" },
     });
     setShowForm(false);
-    setNewLead({ nombre: "", email: "", whatsapp: "", zona: "", presupuesto: "", cuartos: "", fecha_entrada: "", valor: "", notas: "", asignado_a: currentUser.id });
+    setNewLead({ nombre: "", email: "", whatsapp: "", tipo_renta: "noche", fecha_checkin: "", fecha_checkout: "", num_personas: 1, loft_id: "", presupuesto: "", valor: "", notas: "", asignado_a: currentUser.id });
     showToast("Lead agregado ✓");
     if (data[0].whatsapp) {
       fetch("/api/whatsapp/bienvenida", {
@@ -2257,6 +2275,7 @@ export default function CRM() {
             stage={stage}
             isAdmin={isAdmin}
             vendedores={vendedores}
+            lofts={lofts}
             getNombreVendedor={getNombreVendedor}
             reasignarLead={reasignarLead}
             STAGES={STAGES}
@@ -2287,6 +2306,7 @@ export default function CRM() {
         newLead={newLead}
         setNewLead={setNewLead}
         vendedores={vendedores}
+        lofts={lofts}
         addLead={addLead}
       />
 

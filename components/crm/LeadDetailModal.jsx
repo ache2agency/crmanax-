@@ -7,6 +7,7 @@ export default function LeadDetailModal({
   stage,
   isAdmin,
   vendedores,
+  lofts = [],
   getNombreVendedor,
   reasignarLead,
   STAGES,
@@ -31,23 +32,38 @@ export default function LeadDetailModal({
     nombre: lead.nombre || "",
     email: lead.email || "",
     whatsapp: lead.whatsapp || "",
-    zona: lead.zona || "",
+    tipo_renta: lead.tipo_renta || "noche",
+    fecha_checkin: lead.fecha_checkin || "",
+    fecha_checkout: lead.fecha_checkout || "",
+    num_personas: lead.num_personas || 1,
+    loft_id: lead.loft_id || "",
     presupuesto: lead.presupuesto || "",
-    cuartos: lead.cuartos || "",
     valor: lead.valor || 0,
+    deposito_monto: lead.deposito_monto || 0,
+    deposito_pagado: lead.deposito_pagado || false,
+    deposito_devuelto: lead.deposito_devuelto || false,
+    yale_email: lead.yale_email || "",
+    id_recibida: lead.id_recibida || false,
+    docs_recibidos: lead.docs_recibidos || false,
   });
 
   const currentStageId = stage?.id || lead.stage;
+  const loftActual = lofts.find((l) => l.id === (lead.loft_id || draft.loft_id));
 
   const saveInfo = async () => {
-    const fields = ["nombre", "email", "whatsapp", "zona", "presupuesto", "cuartos", "valor"];
-    for (const field of fields) {
-      const val = field === "valor" ? Number(draft[field]) : draft[field];
-      if (val !== (field === "valor" ? Number(lead[field]) : lead[field])) {
-        await updateLeadField(lead.id, field, val);
-      }
+    const textFields = ["nombre", "email", "whatsapp", "tipo_renta", "fecha_checkin", "fecha_checkout", "presupuesto", "yale_email", "loft_id"];
+    const numFields = ["valor", "num_personas", "deposito_monto"];
+    const boolFields = ["deposito_pagado", "deposito_devuelto", "id_recibida", "docs_recibidos"];
+    for (const f of textFields) {
+      if (draft[f] !== lead[f]) await updateLeadField(lead.id, f, draft[f] || null);
     }
-    setSelectedLead(prev => ({ ...prev, ...draft, valor: Number(draft.valor) }));
+    for (const f of numFields) {
+      if (Number(draft[f]) !== Number(lead[f])) await updateLeadField(lead.id, f, Number(draft[f]));
+    }
+    for (const f of boolFields) {
+      if (draft[f] !== lead[f]) await updateLeadField(lead.id, f, draft[f]);
+    }
+    setSelectedLead(prev => ({ ...prev, ...draft, valor: Number(draft.valor), num_personas: Number(draft.num_personas), deposito_monto: Number(draft.deposito_monto) }));
     setEditingInfo(false);
   };
 
@@ -90,35 +106,65 @@ export default function LeadDetailModal({
                 {[
                   { label: "NOMBRE", key: "nombre", placeholder: "Nombre completo" },
                   { label: "EMAIL", key: "email", placeholder: "correo@email.com" },
-                  { label: "WHATSAPP", key: "whatsapp", placeholder: "+52 55 XXXX XXXX" },
-                  { label: "ZONA DE INTERÉS", key: "zona", placeholder: "Ej. Polanco, Roma..." },
-                  { label: "PRESUPUESTO ($)", key: "presupuesto", placeholder: "Ej. 12000" },
-                  { label: "VALOR / RENTA ($)", key: "valor", placeholder: "0", type: "number" },
+                  { label: "WHATSAPP", key: "whatsapp", placeholder: "+52 747 XXX XXXX" },
+                  { label: "PRESUPUESTO ($)", key: "presupuesto", placeholder: "Ej. 15000" },
+                  { label: "RENTA / VALOR ($)", key: "valor", placeholder: "0", type: "number" },
                 ].map(f => (
                   <div key={f.key}>
                     <div style={{ fontSize: 10, color: "#555", letterSpacing: 1.5, marginBottom: 4 }}>{f.label}</div>
-                    <input
-                      style={fieldStyle}
-                      type={f.type || "text"}
-                      placeholder={f.placeholder}
-                      value={draft[f.key]}
-                      onChange={e => setDraft(p => ({ ...p, [f.key]: e.target.value }))}
-                    />
+                    <input style={fieldStyle} type={f.type || "text"} placeholder={f.placeholder} value={draft[f.key]} onChange={e => setDraft(p => ({ ...p, [f.key]: e.target.value }))} />
                   </div>
                 ))}
                 <div>
-                  <div style={{ fontSize: 10, color: "#555", letterSpacing: 1.5, marginBottom: 4 }}>CUARTOS</div>
-                  <select
-                    style={{ ...fieldStyle, cursor: "pointer" }}
-                    value={draft.cuartos}
-                    onChange={e => setDraft(p => ({ ...p, cuartos: e.target.value }))}
-                  >
-                    <option value="">Sin especificar</option>
-                    <option value="1">1 cuarto (estudio)</option>
-                    <option value="2">2 cuartos</option>
-                    <option value="3">3 cuartos</option>
-                    <option value="4+">4 cuartos o más</option>
+                  <div style={{ fontSize: 10, color: "#555", letterSpacing: 1.5, marginBottom: 4 }}>TIPO DE RENTA</div>
+                  <select style={{ ...fieldStyle, cursor: "pointer" }} value={draft.tipo_renta} onChange={e => setDraft(p => ({ ...p, tipo_renta: e.target.value }))}>
+                    <option value="noche">Por noche</option>
+                    <option value="mes">Por mes</option>
                   </select>
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                  <div>
+                    <div style={{ fontSize: 10, color: "#555", letterSpacing: 1.5, marginBottom: 4 }}>CHECK-IN</div>
+                    <input style={fieldStyle} type="date" value={draft.fecha_checkin} onChange={e => setDraft(p => ({ ...p, fecha_checkin: e.target.value }))} />
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 10, color: "#555", letterSpacing: 1.5, marginBottom: 4 }}>CHECK-OUT</div>
+                    <input style={fieldStyle} type="date" value={draft.fecha_checkout} onChange={e => setDraft(p => ({ ...p, fecha_checkout: e.target.value }))} />
+                  </div>
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                  <div>
+                    <div style={{ fontSize: 10, color: "#555", letterSpacing: 1.5, marginBottom: 4 }}>NO. PERSONAS</div>
+                    <input style={fieldStyle} type="number" min={1} max={10} value={draft.num_personas} onChange={e => setDraft(p => ({ ...p, num_personas: e.target.value }))} />
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 10, color: "#555", letterSpacing: 1.5, marginBottom: 4 }}>LOFT</div>
+                    <select style={{ ...fieldStyle, cursor: "pointer" }} value={draft.loft_id} onChange={e => setDraft(p => ({ ...p, loft_id: e.target.value }))}>
+                      <option value="">Sin asignar</option>
+                      {lofts.map(l => <option key={l.id} value={l.id}>{l.nombre} ({l.tipo})</option>)}
+                    </select>
+                  </div>
+                </div>
+                <div>
+                  <div style={{ fontSize: 10, color: "#555", letterSpacing: 1.5, marginBottom: 4 }}>DEPÓSITO EN GARANTÍA ($)</div>
+                  <input style={fieldStyle} type="number" value={draft.deposito_monto} onChange={e => setDraft(p => ({ ...p, deposito_monto: e.target.value }))} />
+                </div>
+                <div>
+                  <div style={{ fontSize: 10, color: "#555", letterSpacing: 1.5, marginBottom: 4 }}>EMAIL YALE CONNECT</div>
+                  <input style={fieldStyle} type="email" placeholder="email del huésped en Yale Connect" value={draft.yale_email} onChange={e => setDraft(p => ({ ...p, yale_email: e.target.value }))} />
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
+                  {[
+                    { key: "deposito_pagado",  label: "Depósito pagado" },
+                    { key: "deposito_devuelto",label: "Depósito devuelto" },
+                    { key: "id_recibida",      label: "ID recibida" },
+                    { key: "docs_recibidos",   label: "Docs recibidos" },
+                  ].map(f => (
+                    <label key={f.key} style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer", fontSize: 11, color: "#ccc" }}>
+                      <input type="checkbox" checked={!!draft[f.key]} onChange={e => setDraft(p => ({ ...p, [f.key]: e.target.checked }))} />
+                      {f.label}
+                    </label>
+                  ))}
                 </div>
               </div>
               <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
@@ -128,14 +174,56 @@ export default function LeadDetailModal({
             </div>
           )}
 
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 20 }}>
-            <div style={{ background: "#1a1a1a", borderRadius: 8, padding: 14 }}>
-              <div style={{ fontSize: 10, color: "#555", letterSpacing: 1, marginBottom: 6 }}>ZONA</div>
-              <div style={{ fontSize: 13, color: "#e0e0e0" }}>{lead.zona || "—"}</div>
-            </div>
-            <div style={{ background: "#1a1a1a", borderRadius: 8, padding: 14 }}>
-              <div style={{ fontSize: 10, color: "#555", letterSpacing: 1, marginBottom: 6 }}>VALOR</div>
-              <div style={{ fontSize: 18, color: stage?.color, fontFamily: "'Bebas Neue'", letterSpacing: 1 }}>{`$${Number(lead.valor).toLocaleString("es-MX")}`}</div>
+          {/* DATOS DE RESERVA */}
+          <div style={{ background: "#1a1a1a", border: "1px solid #2a2a2a", borderRadius: 8, padding: 14, marginBottom: 20 }}>
+            <div style={{ fontSize: 10, color: "#555", letterSpacing: 1, marginBottom: 12 }}>DATOS DE RESERVA</div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+              <div>
+                <div style={{ fontSize: 10, color: "#444", marginBottom: 2 }}>Tipo</div>
+                <div style={{ fontSize: 12, color: "#e0e0e0", textTransform: "capitalize" }}>{lead.tipo_renta || "noche"}</div>
+              </div>
+              <div>
+                <div style={{ fontSize: 10, color: "#444", marginBottom: 2 }}>Loft</div>
+                <div style={{ fontSize: 12, color: "#e0e0e0" }}>{loftActual?.nombre || "—"}</div>
+              </div>
+              <div>
+                <div style={{ fontSize: 10, color: "#444", marginBottom: 2 }}>Check-in</div>
+                <div style={{ fontSize: 12, color: "#e0e0e0" }}>{lead.fecha_checkin || "—"}</div>
+              </div>
+              <div>
+                <div style={{ fontSize: 10, color: "#444", marginBottom: 2 }}>Check-out</div>
+                <div style={{ fontSize: 12, color: "#e0e0e0" }}>{lead.fecha_checkout || "—"}</div>
+              </div>
+              <div>
+                <div style={{ fontSize: 10, color: "#444", marginBottom: 2 }}>Personas</div>
+                <div style={{ fontSize: 12, color: "#e0e0e0" }}>{lead.num_personas || "—"}</div>
+              </div>
+              <div>
+                <div style={{ fontSize: 10, color: "#444", marginBottom: 2 }}>Renta</div>
+                <div style={{ fontSize: 14, color: stage?.color, fontFamily: "'Bebas Neue'" }}>{`$${Number(lead.valor || 0).toLocaleString("es-MX")}`}</div>
+              </div>
+              <div>
+                <div style={{ fontSize: 10, color: "#444", marginBottom: 2 }}>Depósito</div>
+                <div style={{ fontSize: 12, color: lead.deposito_pagado ? "#27AE60" : "#e0e0e0" }}>
+                  {`$${Number(lead.deposito_monto || 0).toLocaleString("es-MX")}`}
+                  {lead.deposito_pagado && <span style={{ marginLeft: 6, fontSize: 10, color: "#27AE60" }}>✓ pagado</span>}
+                  {lead.deposito_devuelto && <span style={{ marginLeft: 6, fontSize: 10, color: "#8ac0ff" }}>✓ devuelto</span>}
+                </div>
+              </div>
+              <div>
+                <div style={{ fontSize: 10, color: "#444", marginBottom: 4 }}>Checklist</div>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                  {[
+                    { label: "ID", ok: lead.id_recibida },
+                    { label: "Docs", ok: lead.docs_recibidos },
+                    { label: "Yale", ok: !!lead.yale_email },
+                  ].map(c => (
+                    <span key={c.label} style={{ fontSize: 10, padding: "2px 6px", borderRadius: 4, background: c.ok ? "#1a3a1a" : "#2a2a2a", color: c.ok ? "#27AE60" : "#555", border: `1px solid ${c.ok ? "#27AE6044" : "#333"}` }}>
+                      {c.ok ? "✓" : "○"} {c.label}
+                    </span>
+                  ))}
+                </div>
+              </div>
             </div>
           </div>
 

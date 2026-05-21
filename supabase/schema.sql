@@ -4,18 +4,7 @@
 -- Ejecutar en Supabase Dashboard → SQL Editor → New query
 
 -- ========================
--- FUNCIÓN HELPER
--- ========================
-create or replace function public.es_admin()
-returns boolean language sql security definer as $$
-  select exists (
-    select 1 from public.profiles
-    where id = auth.uid() and rol = 'admin'
-  );
-$$;
-
--- ========================
--- PROFILES
+-- PROFILES (va primero porque es_admin() la necesita)
 -- ========================
 create table if not exists public.profiles (
   id uuid primary key references auth.users(id) on delete cascade,
@@ -26,6 +15,18 @@ create table if not exists public.profiles (
 );
 alter table public.profiles enable row level security;
 
+-- ========================
+-- FUNCIÓN HELPER (va después de profiles)
+-- ========================
+create or replace function public.es_admin()
+returns boolean language sql security definer as $$
+  select exists (
+    select 1 from public.profiles
+    where id = auth.uid() and rol = 'admin'
+  );
+$$;
+
+-- Políticas de profiles (van después de es_admin)
 create policy "usuario ve su perfil"
   on public.profiles for select
   using (id = auth.uid() or public.es_admin());
