@@ -1,16 +1,24 @@
 import { createServiceRoleClient } from '@/utils/supabase/server'
 import { NextResponse } from 'next/server'
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
     const supabase = createServiceRoleClient()
+    const { searchParams } = new URL(request.url)
+    const numero = searchParams.get('numero') // ej: 028306
 
-    // Traer las últimas 3 conversaciones con sus mensajes
-    const { data: convs } = await supabase
+    // Traer conversaciones filtrando por número si se pasa
+    let query = supabase
       .from('whatsapp_conversaciones')
       .select('id, whatsapp, fase, estado, created_at, ultimo_mensaje_at')
       .order('created_at', { ascending: false })
-      .limit(3)
+      .limit(10)
+
+    if (numero) {
+      query = query.ilike('whatsapp', `%${numero}%`)
+    }
+
+    const { data: convs } = await query
 
     const results = []
     for (const conv of convs || []) {
