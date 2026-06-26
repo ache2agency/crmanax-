@@ -5,6 +5,16 @@ import {
   sendMetaWhatsAppMessage,
 } from '@/lib/whatsapp/provider'
 
+const ADMIN_WHATSAPP = process.env.ALERT_WHATSAPP_NUMBER || '+525534815126'
+
+async function alertarAdmin(mensaje: string) {
+  try {
+    await sendMetaWhatsAppMessage({ to: ADMIN_WHATSAPP, body: mensaje })
+  } catch (e) {
+    console.error('[webhook] alerta admin falló:', e)
+  }
+}
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type IncomingWhatsAppMessage = {
@@ -499,6 +509,15 @@ export async function POST(request: Request) {
       } else if (loft === 'consultar') {
         response = `Perfecto, un asesor te contactará para darte las opciones disponibles. 😊\n\nSi tienes dudas también puedes llamarnos al *+52 55 3481 5126*.`
         nextFase = 'confirmado'
+        // Alerta: lead pide hablar con asesor
+        await alertarAdmin(
+          `💬 *Lead pide hablar con asesor*\n\n` +
+          `👤 *Nombre:* ${lead?.nombre || profileName || 'Sin nombre'}\n` +
+          `📱 *WhatsApp:* ${from}\n` +
+          `🏷 *Renta:* ${tipoRenta === 'noche' ? 'Por noche' : 'Por mes'}\n` +
+          `👥 *Personas:* ${personas}\n\n` +
+          `Quiere ver opciones distintas. Contactar para cerrar.`
+        )
       } else {
         if (leadId) {
           await supabase.from('leads').update({ stage: 'cotizado' }).eq('id', leadId)
@@ -517,6 +536,24 @@ export async function POST(request: Request) {
     } else if (fase === 'confirmado') {
       response = MSG.asesorActivo()
       nextFase = 'confirmado'
+      // Alerta: lead confirmó reserva (solo la primera vez — cuando stage sigue en 'cotizado')
+      if (leadId) {
+        const { data: leadActual } = await supabase.from('leads').select('stage, nombre, tipo_renta, fecha_checkin, fecha_checkout, num_personas, loft_asignado').eq('id', leadId).maybeSingle()
+        if (leadActual?.stage === 'cotizado') {
+          await supabase.from('leads').update({ stage: 'deposito_pendiente' }).eq('id', leadId)
+          await alertarAdmin(
+            `🏠 *Nueva reserva confirmada*\n\n` +
+            `👤 *Nombre:* ${leadActual.nombre || profileName || 'Sin nombre'}\n` +
+            `📱 *WhatsApp:* ${from}\n` +
+            `🏷 *Renta:* ${leadActual.tipo_renta === 'noche' ? 'Por noche' : 'Por mes'}\n` +
+            `📅 *Checkin:* ${formatFecha(leadActual.fecha_checkin || '')}\n` +
+            `📅 *Checkout:* ${formatFecha(leadActual.fecha_checkout || '')}\n` +
+            `👥 *Personas:* ${leadActual.num_personas || '-'}\n` +
+            `🛏 *Loft:* ${leadActual.loft_asignado || 'pendiente'}\n\n` +
+            `El lead confirmó interés. Contactar para coordinar depósito.`
+          )
+        }
+      }
 
     } else {
       // Fase desconocida — reiniciar
