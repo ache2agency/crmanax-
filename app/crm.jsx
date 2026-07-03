@@ -1547,14 +1547,6 @@ export default function CRM() {
               className={`nav-btn ${view === "convs" ? "active" : ""}`}
               onClick={() => confirmReturnToBotIfNeeded(() => { setView("convs"); fetchWhatsConvs(); setSelectedConv(null); setConvMessages([]); })}
             >CONVERSACIONES</button>
-            {isAdmin && (
-              <>
-                <button className={`nav-btn ${view === "base" ? "active" : ""}`} onClick={() => confirmReturnToBotIfNeeded(() => { setView("base"); loadDocumentos(); })}>BASE</button>
-                <button className={`nav-btn ${view === "bot" ? "active" : ""}`} onClick={() => confirmReturnToBotIfNeeded(() => { setView("bot"); loadBotConfig(); })}>BOT</button>
-                <button className={`nav-btn ${view === "lab" ? "active" : ""}`} onClick={() => confirmReturnToBotIfNeeded(() => { setView("lab"); resetLabSimulation(); })}>LAB BOT</button>
-                <button className={`nav-btn ${view === "flows" ? "active" : ""}`} onClick={() => confirmReturnToBotIfNeeded(() => { setView("flows"); loadWhatsappFlow(); })}>FLOWS</button>
-              </>
-            )}
           </div>
 
           {/* Desktop user */}
@@ -1584,12 +1576,6 @@ export default function CRM() {
               { label: "LISTA", v: "lista", action: () => setView("lista") },
               { label: "AGENDA", v: "agenda", action: () => setView("agenda") },
               { label: "CONVERSACIONES", v: "convs", action: () => { setView("convs"); fetchWhatsConvs(); setSelectedConv(null); setConvMessages([]); } },
-              ...(isAdmin ? [
-                { label: "BASE", v: "base", action: () => { setView("base"); loadDocumentos(); } },
-                { label: "BOT", v: "bot", action: () => { setView("bot"); loadBotConfig(); } },
-                { label: "LAB BOT", v: "lab", action: () => { setView("lab"); resetLabSimulation(); } },
-                { label: "FLOWS", v: "flows", action: () => { setView("flows"); loadWhatsappFlow(); } },
-              ] : []),
             ].map(item => (
               <button
                 key={item.v}
