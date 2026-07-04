@@ -1,45 +1,38 @@
 import { createServiceRoleClient } from '@/utils/supabase/server'
 import { NextResponse } from 'next/server'
 
-export async function GET() {
-  const results: Record<string, unknown> = {}
-
+export async function GET(request: Request) {
   try {
     const supabase = createServiceRoleClient()
-    results.supabase_client = 'OK'
+    const { searchParams } = new URL(request.url)
+    const numero = searchParams.get('numero') // ej: 028306
 
-    // Test 1: select conversaciones
-    const { data: convs, error: selectError } = await supabase
+    // Traer conversaciones filtrando por número si se pasa
+    let query = supabase
       .from('whatsapp_conversaciones')
-      .select('id, whatsapp, fase, estado')
-      .limit(5)
-    results.select_conv = selectError ? { error: selectError } : { count: convs?.length, rows: convs }
+      .select('id, whatsapp, fase, estado, created_at, ultimo_mensaje_at')
+      .order('created_at', { ascending: false })
+      .limit(10)
 
-    // Test 2: insert de prueba
-    const { data: inserted, error: insertError } = await supabase
-      .from('whatsapp_conversaciones')
-      .insert([{ whatsapp: '+52_test_debug', estado: 'abierta', fase: 'saludo' }])
-      .select('id')
-      .maybeSingle()
-    results.insert_conv = insertError ? { error: insertError } : { ok: true, id: inserted?.id }
-
-    // Limpiar si se insertó
-    if (inserted?.id) {
-      await supabase.from('whatsapp_conversaciones').delete().eq('id', inserted.id)
-      results.cleanup = 'OK'
+    if (numero) {
+      query = query.ilike('whatsapp', `%${numero}%`)
     }
 
-    // Test 3: env vars
-    results.env = {
-      supabase_url: process.env.NEXT_PUBLIC_SUPABASE_URL ? 'SET' : 'MISSING',
-      service_role_key: process.env.SUPABASE_SERVICE_ROLE_KEY ? 'SET' : 'MISSING',
-      meta_phone_number_id: process.env.META_PHONE_NUMBER_ID || 'MISSING',
-      meta_waba_id: process.env.META_WHATSAPP_BUSINESS_ACCOUNT_ID || 'MISSING',
+    const { data: convs } = await query
+
+    const results = []
+    for (const conv of convs || []) {
+      const { data: msgs } = await supabase
+        .from('whatsapp_mensajes')
+        .select('rol, contenido, created_at')
+        .eq('conversacion_id', conv.id)
+        .order('created_at', { ascending: true })
+
+      results.push({ conv, mensajes: msgs || [] })
     }
 
+    return NextResponse.json(results, { status: 200 })
   } catch (e) {
-    results.fatal_error = String(e)
+    return NextResponse.json({ error: String(e) }, { status: 200 })
   }
-
-  return NextResponse.json(results, { status: 200 })
 }

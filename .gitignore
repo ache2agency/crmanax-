@@ -36,6 +36,11 @@ yarn-error.log*
 # vercel
 .vercel
 
+# tokens y credenciales locales
+tokenMeta.txt
+metaConfig.txt
+botwindsor.txt
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts

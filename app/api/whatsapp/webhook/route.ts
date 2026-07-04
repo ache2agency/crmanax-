@@ -5,6 +5,16 @@ import {
   sendMetaWhatsAppMessage,
 } from '@/lib/whatsapp/provider'
 
+const ADMIN_WHATSAPP = process.env.ALERT_WHATSAPP_NUMBER || '+525534815126'
+
+async function alertarAdmin(mensaje: string) {
+  try {
+    await sendMetaWhatsAppMessage({ to: ADMIN_WHATSAPP, body: mensaje })
+  } catch (e) {
+    console.error('[webhook] alerta admin falló:', e)
+  }
+}
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type IncomingWhatsAppMessage = {
@@ -25,12 +35,12 @@ function calcularPrecio(tipo: string, loft: string, personas: number, checkin: s
     if (isNaN(d1.getTime()) || isNaN(d2.getTime())) return 'a consultar con el asesor'
     const noches = Math.round((d2.getTime() - d1.getTime()) / (1000 * 60 * 60 * 24))
     if (noches <= 0) return 'a consultar con el asesor'
-    const precioPorNoche = loft === 'chico' ? 700 : 800
+    const precioPorNoche = loft === 'chico' ? 700 : loft === 'grande' ? 900 : 800
     const total = noches * precioPorNoche
     return `$${total.toLocaleString('es-MX')} MXN (${noches} noche${noches !== 1 ? 's' : ''} × $${precioPorNoche})`
   } else {
-    if (loft === 'grande') return 'a consultar con el asesor'
     if (loft === 'chico') return '$12,000 MXN/mes'
+    if (loft === 'grande') return personas <= 1 ? '$16,000 MXN/mes' : '$18,000 MXN/mes'
     return personas <= 1 ? '$14,000 MXN/mes' : '$16,000 MXN/mes'
   }
 }
@@ -44,14 +54,14 @@ function nombreLoft(loft: string): string {
 function opcionesTipoLoft(tipo: string, personas: number): string {
   if (tipo === 'noche') {
     if (personas <= 1) {
-      return `¿Qué tipo de loft prefieres?\n\n1️⃣ *Loft Chico* (~16 m², 1 persona) — $700 MXN/noche\n2️⃣ *Loft Mediano* (~24 m², 1-2 personas) — $800 MXN/noche\n\n📸 Fotos y detalles: https://anaxagoras41suite.arqarri.com/`
+      return `¿Qué tipo de loft prefieres?\n\n1️⃣ *Loft Chico* (~16 m², 1 persona) — $700 MXN/noche\n2️⃣ *Loft Mediano* (~24 m², 1-2 personas) — $800 MXN/noche\n3️⃣ *Loft Grande* (~32 m², hasta 2 personas) — $900 MXN/noche\n\n📸 Fotos y detalles: https://anaxagoras41suite.arqarri.com/`
     }
     return `Para ${personas} personas el loft indicado es el *Loft Mediano* (~24 m²) a $800 MXN/noche.\n\n¿Confirmas esta opción?\n\n1️⃣ *Sí, Loft Mediano*\n2️⃣ *Ver otras opciones con un asesor*\n\n📸 Fotos: https://anaxagoras41suite.arqarri.com/`
   } else {
     if (personas <= 1) {
       return `¿Qué tipo de loft prefieres?\n\n1️⃣ *Loft Chico* (~16 m², 1 persona) — $12,000 MXN/mes\n2️⃣ *Loft Mediano* (~24 m², 1-2 personas) — $14,000 MXN/mes\n\n📸 Fotos y detalles: https://anaxagoras41suite.arqarri.com/`
     }
-    return `¿Qué tipo de loft prefieres?\n\n1️⃣ *Loft Mediano* (~24 m², 1-2 personas) — $16,000 MXN/mes\n2️⃣ *Loft Grande* (~32 m², hasta 2 personas) — precio a consultar\n\n📸 Fotos y detalles: https://anaxagoras41suite.arqarri.com/`
+    return `¿Qué tipo de loft prefieres?\n\n1️⃣ *Loft Mediano* (~24 m², 1-2 personas) — $16,000 MXN/mes\n2️⃣ *Loft Grande* (~32 m², hasta 2 personas) — $18,000 MXN/mes\n\n📸 Fotos y detalles: https://anaxagoras41suite.arqarri.com/`
   }
 }
 
@@ -64,6 +74,43 @@ function parseLoft(text: string, tipo: string, personas: number): string | null 
   if (t === '3' || t.includes('grande')) return 'grande'
   if (t.includes('asesor') || t.includes('otra') || t.includes('opcion')) return 'consultar'
   return null
+}
+
+const PALABRAS_NO_NOMBRE = [
+  'hola', 'gracias', 'buenas', 'buenos', 'tardes', 'noches', 'dias', 'dia',
+  'informacion', 'info', 'precio', 'precios', 'costo', 'costos', 'cuanto',
+  'quiero', 'necesito', 'renta', 'loft', 'lofts', 'disponibilidad', 'ayuda',
+  'porfavor', 'favor', 'saludos', 'oferta', 'ofertas', 'departamento',
+]
+
+function normalizar(text: string): string {
+  return text.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
+}
+
+function esNombreValido(text: string): boolean {
+  const t = text.trim()
+  if (!t || t.length > 40) return false
+  if (/[?¿]/.test(t)) return false
+  if (/\d/.test(t)) return false
+  if (!/[a-záéíóúñ]/i.test(t)) return false
+  const palabras = t.split(/\s+/).filter(Boolean)
+  if (palabras.length === 0 || palabras.length > 4) return false
+  if (palabras.map(normalizar).some(p => PALABRAS_NO_NOMBRE.includes(p))) return false
+  return true
+}
+
+// Anuncios "click-to-WhatsApp" de Meta prellenan un mensaje tipo:
+// "Hola, vi su anuncio en Facebook. Te comparto la información solicitada: Juan Pérez, 31 julio, 2 personas"
+// Si el lead ya escribió su nombre ahí, lo aprovechamos en vez de volver a pedirlo.
+function extraerNombreDeAnuncio(text: string): string | null {
+  const m = text.match(/solicitada:\s*(.+)/i)
+  if (!m) return null
+  const candidato = m[1].split(',')[0].trim()
+  return esNombreValido(candidato) ? candidato : null
+}
+
+function esDespedida(textLower: string): boolean {
+  return /gracias.*(despu[eé]s|luego|m[aá]s tarde|con calma)|me comunico|te escribo (despu[eé]s|luego|m[aá]s tarde)|hablamos (despu[eé]s|luego)|nos vemos/.test(textLower)
 }
 
 function formatFecha(fecha: string): string {
@@ -161,7 +208,7 @@ const MSG = {
     `¡Hola! 👋 Con gusto te comparto toda la información sobre nuestros lofts en *Anaxágoras 41*. Para darte una atención más personalizada, ¿me puedes decir tu nombre?`,
 
   saludo: (nombre: string) =>
-    `Mucho gusto, *${nombre}*! 😊\n\nEstamos ubicados en Piedad Narvarte, Benito Juárez, CDMX. Estos son nuestros lofts:\n\n🛏 *Loft Chico* (~16 m², 1 persona)\n• Por noche: $700 MXN\n• Mensual: $12,000 MXN\n\n🛏 *Loft Mediano* (~24 m², 1-2 personas)\n• Por noche: $800 MXN\n• Mensual 1 persona: $14,000 MXN\n• Mensual 2 personas: $16,000 MXN\n\n🛏 *Loft Grande* (~32 m², hasta 2 personas)\n• Precio mensual a consultar\n\n_Todos incluyen agua, luz, gas, internet (150 Mbps), Smart TV, cocineta, limpieza semanal y cerradura inteligente._\n\n📸 Puedes ver fotos de cada loft aquí: https://anaxagoras41suite.arqarri.com/\n\n¿Qué tipo de renta te interesa?\n\n1️⃣ *Por noche*\n2️⃣ *Por mes*`,
+    `Mucho gusto, *${nombre}*! 😊\n\nEstamos ubicados en Piedad Narvarte, Benito Juárez, CDMX. Estos son nuestros lofts:\n\n🛏 *Loft Chico* (~16 m², 1 persona)\n• Por noche: $700 MXN\n• Mensual: $12,000 MXN\n\n🛏 *Loft Mediano* (~24 m², 1-2 personas)\n• Por noche: $800 MXN\n• Mensual 1 persona: $14,000 MXN\n• Mensual 2 personas: $16,000 MXN\n\n🛏 *Loft Grande* (~32 m², hasta 2 personas)\n• Por noche: $900 MXN\n• Mensual 1 persona: $16,000 MXN\n• Mensual 2 personas: $18,000 MXN\n\n_Todos incluyen agua, luz, gas, internet (150 Mbps), Smart TV, área de cocina, limpieza semanal y cerradura inteligente._\n\n📸 Puedes ver fotos de cada loft aquí: https://anaxagoras41suite.arqarri.com/\n\n¿Qué tipo de renta te interesa?\n\n1️⃣ *Por noche*\n2️⃣ *Por mes*`,
 
   pedirTipoRenta: () =>
     `¿Qué tipo de renta te interesa?\n\n1️⃣ *Por noche*\n2️⃣ *Por mes*`,
@@ -198,16 +245,16 @@ const MSG = {
     `¿Confirmas tu interés? Verificaremos disponibilidad y un asesor te contactará para finalizar tu reserva. ✅`,
 
   asesorActivo: () =>
-    `Un asesor ya está en contacto contigo. Si tienes preguntas adicionales escríbelas aquí o llámanos al *+52 55 3481 5126*. 😊`,
+    `✅ ¡Listo! Un asesor verificará disponibilidad y te confirmará en breve.\n\nMientras tanto, ten a la mano:\n📄 Identificación oficial (ambos lados)\n📧 Tu correo para registrarte en la app Yale Connect (acceso al edificio)\n💳 Depósito en garantía (el asesor te indica el monto exacto)\n\n¿Tienes alguna otra duda?`,
 
   precios: () =>
-    `*Tarifas Anaxágoras 41:*\n\n🛏 *Loft Chico* (~16 m², 1 persona)\n• Por noche: $700 MXN\n• Mensual: $12,000 MXN\n\n🛏 *Loft Mediano* (~24 m², 1-2 personas)\n• Por noche: $800 MXN\n• Mensual 1 persona: $14,000 MXN\n• Mensual 2 personas: $16,000 MXN\n\n🛏 *Loft Grande* (~32 m², hasta 2 personas)\n• Consultar precio mensual con un asesor\n\n_Todos incluyen agua, luz, gas, internet, limpieza semanal y cambio de blancos._`,
+    `*Tarifas Anaxágoras 41:*\n\n🛏 *Loft Chico* (~16 m², 1 persona)\n• Por noche: $700 MXN\n• Mensual: $12,000 MXN\n\n🛏 *Loft Mediano* (~24 m², 1-2 personas)\n• Por noche: $800 MXN\n• Mensual 1 persona: $14,000 MXN\n• Mensual 2 personas: $16,000 MXN\n\n🛏 *Loft Grande* (~32 m², hasta 2 personas)\n• Por noche: $900 MXN\n• Mensual 1 persona: $16,000 MXN\n• Mensual 2 personas: $18,000 MXN\n\n_Todos incluyen agua, luz, gas, internet, limpieza semanal y cambio de blancos._`,
 
   ubicacion: () =>
     `📍 *Anaxágoras 41*\nColonia Piedad Narvarte, Benito Juárez, CDMX\n\nCerca de:\n• Parque Delta\n• Hospital Siglo XXI / Centro Médico\n• Roma Norte\n• WTC\n• Autódromo Hermanos Rodríguez\n\n🗺 https://maps.google.com/?q=19.402599,-99.156502\n\nTransporte:\n• EcoBici: 1 min\n• Metrobús Obrero Mundial: 5 min\n• Metro Centro Médico: 10 min`,
 
   servicios: () =>
-    `*Servicios incluidos en todos los lofts:*\n\n✅ Agua, luz, gas e internet (150 Mbps)\n✅ Smart TV y Alexa\n✅ Cocineta equipada\n✅ Zona de trabajo\n✅ Cerradura inteligente\n✅ Limpieza semanal\n✅ Cambio de blancos\n✅ Lavandería (1 uso/semana)\n✅ Roof garden de uso común\n\n❌ No contamos con estacionamiento propio\n❌ No contamos con elevador`,
+    `*Servicios incluidos en todos los lofts:*\n\n✅ Agua, luz, gas e internet (150 Mbps)\n✅ Smart TV y Alexa\n✅ Área de cocina equipada\n✅ Zona de trabajo\n✅ Cerradura inteligente\n✅ Limpieza semanal\n✅ Cambio de blancos\n✅ Lavandería (1 uso/semana)\n✅ Roof garden de uso común\n\n❌ No contamos con estacionamiento propio\n❌ No contamos con elevador`,
 
   estacionamiento: () =>
     `No contamos con estacionamiento propio, pero hay opciones cerca:\n\n🅿️ Estacionamientos públicos en la zona\n🅿️ Parque Delta (a pasos del edificio)\n\n¿Hay algo más en que te pueda ayudar?`,
@@ -417,14 +464,26 @@ export async function POST(request: Request) {
       response = faqResponse(detectFaq(textLower)!) + flowReminder(fase)
       nextFase = fase
 
+    // Despedida/pausa: no insistir con el menú del flujo
+    } else if (fase && fase !== 'nombre' && esDespedida(textLower)) {
+      response = `¡Con gusto! Aquí estamos cuando quieras retomar. 😊`
+      nextFase = fase
+
     } else if (!fase || fase === 'saludo') {
-      response = MSG.bienvenida()
-      nextFase = 'nombre'
+      const nombreDetectado = extraerNombreDeAnuncio(text)
+      if (nombreDetectado) {
+        if (leadId) await supabase.from('leads').update({ nombre: nombreDetectado }).eq('id', leadId)
+        response = MSG.saludo(nombreDetectado)
+        nextFase = 'tipo_renta'
+      } else {
+        response = MSG.bienvenida()
+        nextFase = 'nombre'
+      }
 
     } else if (fase === 'nombre') {
       const nombre = text.trim()
-      if (nombre.length < 2) {
-        response = `Por favor dime tu nombre para continuar. 😊`
+      if (!esNombreValido(nombre)) {
+        response = `Ese no me parece un nombre 😅 ¿Me compartes tu nombre completo?`
         nextFase = 'nombre'
       } else {
         if (leadId) await supabase.from('leads').update({ nombre }).eq('id', leadId)
@@ -499,6 +558,15 @@ export async function POST(request: Request) {
       } else if (loft === 'consultar') {
         response = `Perfecto, un asesor te contactará para darte las opciones disponibles. 😊\n\nSi tienes dudas también puedes llamarnos al *+52 55 3481 5126*.`
         nextFase = 'confirmado'
+        // Alerta: lead pide hablar con asesor
+        await alertarAdmin(
+          `💬 *Lead pide hablar con asesor*\n\n` +
+          `👤 *Nombre:* ${lead?.nombre || profileName || 'Sin nombre'}\n` +
+          `📱 *WhatsApp:* ${from}\n` +
+          `🏷 *Renta:* ${tipoRenta === 'noche' ? 'Por noche' : 'Por mes'}\n` +
+          `👥 *Personas:* ${personas}\n\n` +
+          `Quiere ver opciones distintas. Contactar para cerrar.`
+        )
       } else {
         if (leadId) {
           await supabase.from('leads').update({ stage: 'cotizado' }).eq('id', leadId)
@@ -517,6 +585,24 @@ export async function POST(request: Request) {
     } else if (fase === 'confirmado') {
       response = MSG.asesorActivo()
       nextFase = 'confirmado'
+      // Alerta: lead confirmó reserva (solo la primera vez — cuando stage sigue en 'cotizado')
+      if (leadId) {
+        const { data: leadActual } = await supabase.from('leads').select('stage, nombre, tipo_renta, fecha_checkin, fecha_checkout, num_personas, loft_asignado').eq('id', leadId).maybeSingle()
+        if (leadActual?.stage === 'cotizado') {
+          await supabase.from('leads').update({ stage: 'deposito_pendiente' }).eq('id', leadId)
+          await alertarAdmin(
+            `🏠 *Nueva reserva confirmada*\n\n` +
+            `👤 *Nombre:* ${leadActual.nombre || profileName || 'Sin nombre'}\n` +
+            `📱 *WhatsApp:* ${from}\n` +
+            `🏷 *Renta:* ${leadActual.tipo_renta === 'noche' ? 'Por noche' : 'Por mes'}\n` +
+            `📅 *Checkin:* ${formatFecha(leadActual.fecha_checkin || '')}\n` +
+            `📅 *Checkout:* ${formatFecha(leadActual.fecha_checkout || '')}\n` +
+            `👥 *Personas:* ${leadActual.num_personas || '-'}\n` +
+            `🛏 *Loft:* ${leadActual.loft_asignado || 'pendiente'}\n\n` +
+            `El lead confirmó interés. Contactar para coordinar depósito.`
+          )
+        }
+      }
 
     } else {
       // Fase desconocida — reiniciar

@@ -2,182 +2,124 @@
 import { useState, useRef, useEffect } from "react";
 
 const RESPUESTAS_RAPIDAS = [
-  { grupo: "Idiomas", items: [
-    { label: "Inglés adultos", texto: `¡Excelente elección! 😊 Te comparto la información de nuestro Curso de Inglés:
+  { grupo: "Información general", items: [
+    { label: "Tarifas", texto: `*Tarifas Anaxágoras 41:*
 
-*📚 Curso de Inglés para Adultos*
-Dirigido a personas de 13 años en adelante
+🛏 *Loft Chico* (~16 m², 1 persona)
+• Por noche: $700 MXN
+• Mensual: $12,000 MXN
 
-*🎓 Modalidad:* Presencial y Online
+🛏 *Loft Mediano* (~24 m², 1-2 personas)
+• Por noche: $800 MXN
+• Mensual 1 persona: $14,000 MXN
+• Mensual 2 personas: $16,000 MXN
 
-*🕐 Horarios presenciales:*
-• Matutino: 10:00 - 12:00 hrs
-• Vespertino: 17:00 - 19:00 hrs
-• Sabatino: 09:00 - 13:00 hrs
+🛏 *Loft Grande* (~32 m², hasta 2 personas)
+• Por noche: $900 MXN
+• Mensual 1 persona: $16,000 MXN
+• Mensual 2 personas: $18,000 MXN
 
-*🛜 Horarios online:*
-• Vespertino: 17:00 - 19:00 hrs
-• Sabatino: 09:00 - 13:00 hrs
+_Todos incluyen agua, luz, gas, internet, limpieza semanal y cambio de blancos._` },
+    { label: "Ubicación", texto: `📍 *Anaxágoras 41*
+Colonia Piedad Narvarte, Benito Juárez, CDMX
 
-*⏳ Duración:* 5 meses (10 meses sabatino)
+Cerca de:
+• Parque Delta
+• Hospital Siglo XXI / Centro Médico
+• Roma Norte
+• WTC
+• Autódromo Hermanos Rodríguez
 
-*💰 Inversión:*
-• Inscripción: $750
-• Mensualidad desde $990
+🗺 https://maps.google.com/?q=19.402599,-99.156502
 
-*🎉 Promoción del mes:*
-• Inscripción: ~$750~ → $375 (50% de descuento)
-• ¡Primer mes gratis!
+Transporte:
+• EcoBici: 1 min
+• Metrobús Obrero Mundial: 5 min
+• Metro Centro Médico: 10 min` },
+    { label: "Servicios incluidos", texto: `*Servicios incluidos en todos los lofts:*
 
-Al terminar obtienes un Diploma con validez oficial.
+✅ Agua, luz, gas e internet (150 Mbps)
+✅ Smart TV y Alexa
+✅ Área de cocina equipada
+✅ Zona de trabajo
+✅ Cerradura inteligente
+✅ Limpieza semanal
+✅ Cambio de blancos
+✅ Lavandería (1 uso/semana)
+✅ Roof garden de uso común
 
-¿Cómo te gustaría continuar?
-*A)* Tengo dudas 🤔
-*B)* Agendar mi examen de ubicación gratuito 📝` },
-    { label: "Inglés niños", texto: `¡Qué gran decisión para el futuro de tu hij@! 😊 Te comparto la información de nuestro Curso de Inglés para Niños:
+❌ No contamos con estacionamiento propio
+❌ No contamos con elevador` },
+    { label: "Seguridad", texto: `*Seguridad en Anaxágoras 41:*
 
-*📚 Curso de Inglés para Niños*
-Dirigido a niños de 4 a 12 años
+🔐 Cerraduras inteligentes con códigos personalizados
+📹 Videovigilancia en entrada, pasillos, terraza y lavandería
+🚪 Control de acceso individual
 
-*🎓 Modalidad:* Presencial y Online
+Política: *un acceso = una persona.* Cada huésped registra su ingreso individualmente.` },
+    { label: "Estacionamiento", texto: `No contamos con estacionamiento propio, pero hay opciones cerca:
 
-*🕐 Horarios presenciales:*
-• Martes a jueves: 13:00 - 14:00 hrs o 17:00 - 18:00 hrs
-• Sabatino: 09:00 - 13:00 hrs
+🅿️ Estacionamientos públicos en la zona
+🅿️ Parque Delta (a pasos del edificio)
 
-*🛜 Horarios online:*
-• Lunes a jueves: 17:00 - 18:00 hrs
-• Sabatino: 09:00 - 13:00 hrs
-
-*⏳ Duración:* 5 meses
-
-*💰 Inversión:*
-• Inscripción: $800
-• Mensualidad: $780
-
-*🎉 Promoción del mes:*
-• Inscripción: ~$800~ → $400 (50% de descuento)
-• ¡Primer mes gratis!
-
-Al terminar obtiene un Diploma con validez oficial.
-
-¿Cómo te gustaría continuar?
-*A)* Tengo dudas 🤔
-*B)* Agendar mi examen de ubicación gratuito 📝` },
+¿Hay algo más en que te pueda ayudar?` },
   ]},
-  { grupo: "Licenciaturas", items: [
-    { label: "Lic. en Inglés", texto: `¡Excelente elección! 😊 Te comparto la información de nuestra Licenciatura en Inglés:
+  { grupo: "Tipos de renta", items: [
+    { label: "Renta por noche", texto: `*Renta por noche — Anaxágoras 41:*
 
-*🎓 Licenciatura en Inglés*
-Modalidad: Presencial | Duración: 3 años
+🛏 Loft Chico (~16 m², 1 persona): $700 MXN/noche
+🛏 Loft Mediano (~24 m², 1-2 personas): $800 MXN/noche
+🛏 Loft Grande (~32 m², hasta 2 personas): $900 MXN/noche
 
-*🕐 Horarios:* Matutino, Vespertino y Sabatino
+📸 Fotos: https://anaxagoras41suite.arqarri.com/
 
-*💰 Inversión:*
-• Inscripción semestral: $2,150 (incluye credencial)
-• Mensualidad: $2,750
+¿Para qué fechas y cuántas personas sería?` },
+    { label: "Renta por mes", texto: `*Renta por mes — Anaxágoras 41:*
 
-*🎉 Promoción del mes:*
-• Inscripción: ~$2,150~ → $645 (70% de descuento)
-• Mensualidad: ~$2,750~ → $1,925 (30% de descuento)
+🛏 Loft Chico (1 persona): $12,000 MXN/mes
+🛏 Loft Mediano (1 persona): $14,000 MXN/mes | (2 personas): $16,000 MXN/mes
+🛏 Loft Grande (1 persona): $16,000 MXN/mes | (2 personas): $18,000 MXN/mes
 
-*💼 Campo laboral:* Docente, traductor, asesor editorial, call centers, centros de investigación y organismos internacionales.
+📸 Fotos: https://anaxagoras41suite.arqarri.com/
 
-📄 Plan de estudios: https://drive.google.com/file/d/1M_K1sIqh-8LgZdTsiAmIRMOkVIiTw295/view
+¿Para qué fecha de entrada sería?` },
+    { label: "Roof Top / Eventos", texto: `*Roof Top Anaxágoras* — Eventos
 
-¿Cómo te gustaría continuar?
-*A)* Tengo dudas 🤔
-*B)* Quiero inscribirme ✍️` },
-    { label: "Psicología", texto: `¡Excelente elección! 😊 Te comparto la información de nuestra Licenciatura en Psicología:
+Espacio semitechado ideal para eventos pequeños, brunchs y reuniones.
 
-*🎓 Licenciatura en Psicología*
-Modalidad: Presencial | Duración: 3 años
+👥 Capacidad: hasta 20 personas
+⏰ Horario: 9:00 a.m. – 12:00 a.m.
+💰 Tarifa: $6,000 MXN (7 horas)
+🔒 Depósito: $2,000 MXN (se devuelve al día siguiente)
 
-*🕐 Horarios:* Matutino y Sabatino
+Incluye: mobiliario, barra con tarja, bocina, proyector y sanitario.
 
-*💰 Inversión:*
-• Inscripción semestral: $2,300 (incluye credencial)
-• Mensualidad: $2,750
+_No se permite equipo de audio externo ni grupos musicales._
 
-*🎉 Promoción del mes:*
-• Inscripción: ~$2,300~ → $690 (70% de descuento)
-• Mensualidad: ~$2,750~ → $1,925 (30% de descuento)
-
-*💼 Campo laboral:* Salud, educación, medio ambiente, producción, consumo y convivencia social.
-
-📄 Plan de estudios: https://drive.google.com/file/d/1mw16jhbwN3K2dBy3ajcb3qREOPVXZ9rb/view
-
-¿Cómo te gustaría continuar?
-*A)* Tengo dudas 🤔
-*B)* Quiero inscribirme ✍️` },
-    { label: "RR.PP. y Mercadotecnia", texto: `¡Excelente elección! 😊 Te comparto la información de nuestra Licenciatura en Relaciones Públicas y Mercadotecnia:
-
-*🎓 Licenciatura en Relaciones Públicas y Mercadotecnia*
-Modalidad: Presencial | Duración: 3 años
-
-*🕐 Horarios:* Matutino, Vespertino y Sabatino
-
-*💰 Inversión:*
-• Inscripción semestral: $2,300 (incluye credencial)
-• Mensualidad: $2,750
-
-*🎉 Promoción del mes:*
-• Inscripción: ~$2,300~ → $690 (70% de descuento)
-• Mensualidad: ~$2,750~ → $1,925 (30% de descuento)
-
-*✨ Incluye 3 certificaciones:* Marketing digital, creación de páginas web y diseño gráfico.
-
-*💼 Campo laboral:* Agencias de publicidad, marketing, medios de comunicación, gobierno, tecnología, entretenimiento.
-
-📄 Plan de estudios: https://drive.google.com/file/d/1tv2023m30ZVHJRryfwhNm6tT9wICHvnZ/view
-
-¿Cómo te gustaría continuar?
-*A)* Tengo dudas 🤔
-*B)* Quiero inscribirme ✍️` },
-    { label: "Adm. Turística", texto: `¡Excelente elección! 😊 Te comparto la información de nuestra Licenciatura en Administración Turística:
-
-*🎓 Licenciatura en Administración Turística*
-Modalidad: Presencial | Duración: 3 años
-
-*🕐 Horarios:* Matutino, Vespertino y Sabatino
-
-*💰 Inversión:*
-• Inscripción semestral: $2,200 (incluye credencial)
-• Mensualidad: $2,750
-
-*🎉 Promoción del mes:*
-• Inscripción: ~$2,200~ → $660 (70% de descuento)
-• Mensualidad: ~$2,750~ → $1,925 (30% de descuento)
-
-*💼 Campo laboral:* Agencias de viajes, hoteles, resorts, operadores turísticos, eventos y convenciones.
-
-📄 Plan de estudios: https://drive.google.com/file/d/1FMFbZ4pupnqkD_X1pBUcxlVo0HmRxUPb/view
-
-¿Cómo te gustaría continuar?
-*A)* Tengo dudas 🤔
-*B)* Quiero inscribirme ✍️` },
+Para reservar el Roof Top escríbenos al *+52 55 3481 5126*.` },
   ]},
-  { grupo: "Bachillerato", items: [
-    { label: "Bachillerato", texto: `¡Excelente elección! 😊 Te comparto la información de nuestra Prepa Windsor:
+  { grupo: "Proceso de reserva", items: [
+    { label: "Documentos para rentar", texto: `[BORRADOR — confirmar con Harold]
 
-*🎓 Bachillerato — Prepa Windsor*
-Modalidad: Presencial | Duración: 2 años
+Para tu reserva vamos a necesitar:
 
-*🕐 Horarios:* Matutino y Vespertino
+📄 Identificación oficial (ambos lados)
+📧 Tu correo para registrarte en la app Yale Connect (acceso al edificio)
+💳 Depósito en garantía (te confirmo el monto exacto)
 
-*💰 Inversión:*
-• Inscripción cuatrimestral: $1,100 (incluye credencial)
-• Mensualidad: $1,800
+En cuanto los tengas me los compartes y avanzamos con tu reserva. 😊` },
+    { label: "Depósito en garantía", texto: `[BORRADOR — confirmar monto/condiciones con Harold]
 
-*🎉 Promoción del mes:*
-• Inscripción: ~$1,100~ → $550 (50% de descuento)
-• Mensualidad: ~$1,800~ → $1,440 (20% de descuento)
+El depósito en garantía se paga antes de tu llegada y se devuelve unos días después de tu checkout, siempre que todo esté en orden.
 
-📄 Más información: https://drive.google.com/file/d/1txVAaLEpi-WPTybWtSKKMu3mn6fC5TkK/view
+En breve te confirmo el monto exacto según el loft y tiempo de renta.` },
+    { label: "Confirmar disponibilidad / visita", texto: `[BORRADOR — confirmar proceso de visitas con Harold]
 
-¿Cómo te gustaría continuar?
-*A)* Tengo dudas 🤔
-*B)* Quiero inscribirme ✍️` },
+Con gusto te ayudo a agendar una visita para conocer el loft antes de confirmar. ¿Qué día y horario te acomoda?` },
+  ]},
+  { grupo: "Seguimiento", items: [
+    { label: "Recordatorio amable", texto: `Hola de nuevo 😊 Solo quería saber si sigues interesad@ en alguno de nuestros lofts, o si tienes alguna duda que te pueda resolver.` },
+    { label: "Cierre / agradecimiento", texto: `¡Con gusto! Quedamos al pendiente. Si más adelante tienes dudas o quieres retomar, aquí estamos. 😊` },
   ]},
 ];
 
