@@ -15,6 +15,15 @@ async function alertarAdmin(mensaje: string) {
   }
 }
 
+async function alertarNuevoLead(profileName: string, from: string, primerMensaje: string) {
+  await alertarAdmin(
+    `🆕 *Nuevo lead*\n\n` +
+    `👤 *Nombre:* ${profileName || 'Sin nombre'}\n` +
+    `📱 *WhatsApp:* ${from}\n\n` +
+    `"${primerMensaje}"`
+  )
+}
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type IncomingWhatsAppMessage = {
@@ -375,6 +384,7 @@ export async function POST(request: Request) {
           .select('id')
           .maybeSingle()
         leadId = newLead?.id
+        if (leadId) await alertarNuevoLead(profileName, from, text)
       }
       if (leadId) {
         await supabase.from('whatsapp_conversaciones')
@@ -410,6 +420,7 @@ export async function POST(request: Request) {
           .maybeSingle()
         if (leadError) console.error('[webhook] lead insert error:', leadError)
         leadId = newLead?.id
+        if (leadId) await alertarNuevoLead(profileName, from, text)
       }
 
       // Registrar actividad
