@@ -141,7 +141,7 @@ export default function LeadDetailModal({
                     <div style={{ fontSize: 10, color: "#555", letterSpacing: 1.5, marginBottom: 4 }}>LOFT</div>
                     <select style={{ ...fieldStyle, cursor: "pointer" }} value={draft.loft_id} onChange={e => setDraft(p => ({ ...p, loft_id: e.target.value }))}>
                       <option value="">Sin asignar</option>
-                      {lofts.map(l => <option key={l.id} value={l.id}>{l.nombre} ({l.tipo})</option>)}
+                      {lofts.map(l => <option key={l.id} value={l.id}>{l.nombre}{l.tipo ? ` (${l.tipo})` : ""}</option>)}
                     </select>
                   </div>
                 </div>
