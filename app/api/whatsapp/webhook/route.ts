@@ -616,6 +616,7 @@ export async function POST(request: Request) {
       const { error: updateError } = await supabase.from('whatsapp_conversaciones').update({
         fase: nextFase,
         ultimo_mensaje_at: new Date().toISOString(),
+        seguimiento_enviado: false,
       }).eq('id', convId)
       if (updateError) console.error('[webhook] conv update error:', updateError)
 
