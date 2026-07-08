@@ -69,7 +69,7 @@ export default function NewLeadModal({ showForm, setShowForm, newLead, setNewLea
                 <select className="select" value={newLead.loft_id} onChange={(e) => setNewLead((p) => ({ ...p, loft_id: e.target.value }))}>
                   <option value="">Sin asignar</option>
                   {lofts.map((l) => (
-                    <option key={l.id} value={l.id}>{l.nombre} ({l.tipo})</option>
+                    <option key={l.id} value={l.id}>{l.nombre}{l.tipo ? ` (${l.tipo})` : ""}</option>
                   ))}
                 </select>
               </div>

@@ -436,7 +436,7 @@ export default function CRM() {
   };
 
   const fetchLofts = async () => {
-    const { data } = await supabase.from("lofts").select("id, nombre, tipo").eq("activo", true).order("nombre");
+    const { data } = await supabase.from("lofts").select("id, nombre, tipo").eq("activo", true).order("orden");
     setLofts(data || []);
   };
 
