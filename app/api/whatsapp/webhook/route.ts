@@ -11,6 +11,7 @@ const ADMIN_WHATSAPP_NUMBERS = (process.env.ALERT_WHATSAPP_NUMBER || '+525534815
   .filter(Boolean)
 
 const ADMIN_WHATSAPP_NUMBERS_NORMALIZED = new Set(ADMIN_WHATSAPP_NUMBERS.map(normalizePhoneNumber))
+const ADMIN_TEST_MODE_MINUTES = 30
 
 async function alertarAdmin(mensaje: string) {
   for (const numero of ADMIN_WHATSAPP_NUMBERS) {
@@ -348,9 +349,37 @@ export async function POST(request: Request) {
 
     // Números de admin (Alexis, Harold) — solo abren su ventana de 24h para
     // recibir alertas, no son clientes: no se les crea lead ni se les contesta
-    // con la info de Anaxágoras.
+    // con la info de Anaxágoras, salvo que hayan activado el modo prueba
+    // ("test" / "salir") para probar el flujo real del bot en su propio número.
     if (ADMIN_WHATSAPP_NUMBERS_NORMALIZED.has(from)) {
-      return Response.json({ ok: true, admin: true })
+      if (textLower === 'test') {
+        await supabase.from('admin_test_mode').upsert([{ whatsapp: from, activated_at: new Date().toISOString() }])
+        await sendMetaWhatsAppMessage({
+          to: from,
+          body: '🧪 Modo prueba activado. A partir de ahora te voy a tratar como cliente para que pruebes el flujo real. Escribe "salir" para volver a modo admin (o se apaga solo en 30 min).',
+        })
+        return Response.json({ ok: true, admin: true, test_mode: 'activado' })
+      }
+
+      if (textLower === 'salir') {
+        await supabase.from('admin_test_mode').delete().eq('whatsapp', from)
+        await sendMetaWhatsAppMessage({ to: from, body: '👋 Modo prueba desactivado. Volviste a modo admin.' })
+        return Response.json({ ok: true, admin: true, test_mode: 'desactivado' })
+      }
+
+      const { data: testMode } = await supabase
+        .from('admin_test_mode')
+        .select('activated_at')
+        .eq('whatsapp', from)
+        .maybeSingle()
+
+      const activatedAt = testMode?.activated_at ? new Date(testMode.activated_at as string).getTime() : null
+      const testModeVigente = activatedAt !== null && Date.now() - activatedAt < ADMIN_TEST_MODE_MINUTES * 60 * 1000
+
+      if (!testModeVigente) {
+        return Response.json({ ok: true, admin: true })
+      }
+      // Modo prueba activo: sigue de largo y se procesa como un lead normal.
     }
 
     // ── Buscar conversación abierta ──────────────────────────────────────────
