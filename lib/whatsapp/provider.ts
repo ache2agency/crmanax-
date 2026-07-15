@@ -33,11 +33,11 @@ export function getMetaConfig() {
 export async function sendMetaWhatsAppTemplate({
   to,
   templateName,
-  parameters,
+  parameters = [],
 }: {
   to: string
   templateName: string
-  parameters: string[]
+  parameters?: string[]
 }) {
   const { accessToken, phoneNumberId } = getMetaConfig()
   if (!accessToken || !phoneNumberId) throw new Error('Faltan variables de entorno de Meta')
@@ -51,7 +51,10 @@ export async function sendMetaWhatsAppTemplate({
     template: {
       name: templateName,
       language: { code: 'es_MX' },
-      components: [{ type: 'body', parameters: parameters.map(v => ({ type: 'text', text: v })) }],
+      // Template sin variables (ej. alerta_reactivacion) → sin components.
+      ...(parameters.length > 0
+        ? { components: [{ type: 'body', parameters: parameters.map(v => ({ type: 'text', text: v })) }] }
+        : {}),
     },
   })
 
