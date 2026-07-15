@@ -5,13 +5,18 @@ import {
   sendMetaWhatsAppMessage,
 } from '@/lib/whatsapp/provider'
 
-const ADMIN_WHATSAPP = process.env.ALERT_WHATSAPP_NUMBER || '+525534815126'
+const ADMIN_WHATSAPP_NUMBERS = (process.env.ALERT_WHATSAPP_NUMBER || '+525534815126,+527471028306')
+  .split(',')
+  .map((n) => n.trim())
+  .filter(Boolean)
 
 async function alertarAdmin(mensaje: string) {
-  try {
-    await sendMetaWhatsAppMessage({ to: ADMIN_WHATSAPP, body: mensaje })
-  } catch (e) {
-    console.error('[webhook] alerta admin falló:', e)
+  for (const numero of ADMIN_WHATSAPP_NUMBERS) {
+    try {
+      await sendMetaWhatsAppMessage({ to: numero, body: mensaje })
+    } catch (e) {
+      console.error(`[webhook] alerta admin falló (${numero}):`, e)
+    }
   }
 }
 

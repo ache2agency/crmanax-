@@ -6,7 +6,8 @@ export default function LeadsTable({
   setSelectedLead,
   formatPeso,
   getNombreVendedor,
-  openWA,
+  goToConversation,
+  hasConversation,
   normalizeStage,
 }) {
   return (
@@ -42,7 +43,11 @@ export default function LeadsTable({
                 <td style={{ padding: "12px 16px", color: "#64748b", fontSize: 12 }}>{getNombreVendedor(lead.asignado_a)}</td>
                 <td style={{ padding: "12px 16px", color: "#94a3b8", fontSize: 11 }}>{lead.fecha}</td>
                 <td style={{ padding: "12px 16px" }} onClick={(e) => e.stopPropagation()}>
-                  <button className="btn btn-wa" onClick={() => openWA(lead)}>WA</button>
+                  {hasConversation(lead) ? (
+                    <button className="btn btn-wa" onClick={() => goToConversation(lead)}>💬 Ver conversación</button>
+                  ) : (
+                    <span style={{ fontSize: 11, color: "#94a3b8" }}>Sin conversación</span>
+                  )}
                 </td>
               </tr>
             );
