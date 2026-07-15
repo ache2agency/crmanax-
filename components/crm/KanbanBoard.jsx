@@ -13,7 +13,7 @@ export default function KanbanBoard({
   hasConversation,
 }) {
   return (
-    <div style={{ display: "flex", flexDirection: "row", alignItems: "flex-start", gap: 14, overflowX: "auto", paddingBottom: 8, WebkitOverflowScrolling: "touch", minWidth: "max-content" }}>
+    <div style={{ display: "flex", flexDirection: "row", gap: 14, overflowX: "auto", paddingBottom: 8, WebkitOverflowScrolling: "touch", minWidth: "max-content" }}>
       {STAGES.map((stage) => (
         <div
           key={stage.id}
@@ -21,9 +21,9 @@ export default function KanbanBoard({
           onDragLeave={(e) => e.currentTarget.classList.remove("drag-over")}
           onDrop={(e) => { e.currentTarget.classList.remove("drag-over"); handleDrop(stage.id); }}
           className="col-drop"
-          style={{ minWidth: 220, flex: "0 0 220px", maxHeight: "calc(100vh - 280px)", display: "flex", flexDirection: "column" }}
+          style={{ minWidth: 220, flex: "0 0 220px" }}
         >
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12, padding: "10px 12px", background: stage.bg, borderRadius: 8, border: `1px solid ${stage.color}22`, flexShrink: 0 }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12, padding: "10px 12px", background: stage.bg, borderRadius: 8, border: `1px solid ${stage.color}22` }}>
             <div>
               <div style={{ fontSize: 11, color: stage.color, fontWeight: 500, letterSpacing: 0.5 }}>{stage.label}</div>
               <div style={{ fontSize: 10, color: "#555", marginTop: 2 }}>{formatPeso(byStage(stage.id).reduce((a, b) => a + b.valor, 0))}</div>
@@ -32,7 +32,7 @@ export default function KanbanBoard({
               {byStage(stage.id).length}
             </div>
           </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 8, overflowY: "auto", paddingRight: 4 }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
             {byStage(stage.id).map((lead) => (
               <div
                 key={lead.id}
