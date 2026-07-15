@@ -10,6 +10,8 @@ const ADMIN_WHATSAPP_NUMBERS = (process.env.ALERT_WHATSAPP_NUMBER || '+525534815
   .map((n) => n.trim())
   .filter(Boolean)
 
+const ADMIN_WHATSAPP_NUMBERS_NORMALIZED = new Set(ADMIN_WHATSAPP_NUMBERS.map(normalizePhoneNumber))
+
 async function alertarAdmin(mensaje: string) {
   for (const numero of ADMIN_WHATSAPP_NUMBERS) {
     try {
@@ -343,6 +345,13 @@ export async function POST(request: Request) {
     const { from, body, profileName, rawPayload } = incoming
     const text = body.trim()
     const textLower = text.toLowerCase()
+
+    // Números de admin (Alexis, Harold) — solo abren su ventana de 24h para
+    // recibir alertas, no son clientes: no se les crea lead ni se les contesta
+    // con la info de Anaxágoras.
+    if (ADMIN_WHATSAPP_NUMBERS_NORMALIZED.has(from)) {
+      return Response.json({ ok: true, admin: true })
+    }
 
     // ── Buscar conversación abierta ──────────────────────────────────────────
     const { data: conv } = await supabase
