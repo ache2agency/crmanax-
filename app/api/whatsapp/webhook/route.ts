@@ -314,7 +314,7 @@ function detectFaq(textLower: string): string | null {
 
 function faqResponse(key: string): string {
   switch (key) {
-    case 'precios': return MSG.precios()
+    case 'precios': return `El costo depende de la disponibilidad y las fechas. En cuanto un asesor confirme disponibilidad te comparte el precio exacto. 😊`
     case 'ubicacion': return MSG.ubicacion()
     case 'servicios': return MSG.servicios()
     case 'estacionamiento': return MSG.estacionamiento()
@@ -325,7 +325,7 @@ function faqResponse(key: string): string {
 }
 
 function flowReminder(fase: string | null): string {
-  if (!fase || fase === 'saludo' || fase === 'nombre' || fase === 'confirmado') return ''
+  if (!fase || fase === 'saludo' || fase === 'nombre' || fase === 'confirmado' || fase === 'esperando_asesor') return ''
   if (fase === 'tipo_renta') return `\n\n${MSG.pedirTipoRenta()}`
   if (fase === 'checkin') return `\n\n${MSG.pedirCheckin()}`
   if (fase === 'checkout') return `\n\n${MSG.pedirCheckout()}`
@@ -541,8 +541,8 @@ export async function POST(request: Request) {
       const nombreDetectado = extraerNombreDeAnuncio(text)
       if (nombreDetectado) {
         if (leadId) await supabase.from('leads').update({ nombre: nombreDetectado }).eq('id', leadId)
-        response = MSG.saludo(nombreDetectado)
-        nextFase = 'tipo_renta'
+        response = `Mucho gusto, *${nombreDetectado}*! 😊\n\n` + MSG.pedirCheckin()
+        nextFase = 'checkin'
       } else {
         response = MSG.bienvenida()
         nextFase = 'nombre'
@@ -555,10 +555,12 @@ export async function POST(request: Request) {
         nextFase = 'nombre'
       } else {
         if (leadId) await supabase.from('leads').update({ nombre }).eq('id', leadId)
-        response = MSG.saludo(nombre)
-        nextFase = 'tipo_renta'
+        response = `Mucho gusto, *${nombre}*! 😊\n\n` + MSG.pedirCheckin()
+        nextFase = 'checkin'
       }
 
+    // Fase "tipo_renta" — solo la usan conversaciones que ya venían de antes de
+    // este cambio de flujo (2026-07-15). Conversaciones nuevas ya no pasan por aquí.
     } else if (fase === 'tipo_renta') {
       let tipo: string | null = null
       if (textLower.includes('noche') || text === '1') tipo = 'noche'
@@ -602,14 +604,28 @@ export async function POST(request: Request) {
         nextFase = 'personas'
       } else {
         if (leadId) {
-          await supabase.from('leads').update({ num_personas: num }).eq('id', leadId)
+          await supabase.from('leads').update({ num_personas: num, stage: 'cotizado' }).eq('id', leadId)
         }
         const { data: lead } = leadId
-          ? await supabase.from('leads').select('tipo_renta').eq('id', leadId).maybeSingle()
+          ? await supabase.from('leads').select('nombre, fecha_checkin, fecha_checkout').eq('id', leadId).maybeSingle()
           : { data: null }
-        const tipoRenta = lead?.tipo_renta || 'noche'
-        response = opcionesTipoLoft(tipoRenta, num)
-        nextFase = 'tipo_loft'
+        const nombreLead = lead?.nombre || profileName || 'amigo/a'
+        response =
+          `¡Perfecto, *${nombreLead}*! 🙌 Ya tengo tus datos:\n\n` +
+          `📅 *Llegada:* ${formatFecha(lead?.fecha_checkin || '')}\n` +
+          `📅 *Salida:* ${formatFecha(lead?.fecha_checkout || '')}\n` +
+          `👥 *Personas:* ${num}\n\n` +
+          `Un asesor verificará la disponibilidad y se pondrá en contacto contigo en breve. 😊`
+        nextFase = 'esperando_asesor'
+        await alertarAdmin(
+          `🆕 *Lead listo — verificar disponibilidad*\n\n` +
+          `👤 *Nombre:* ${nombreLead}\n` +
+          `📱 *WhatsApp:* ${from}\n` +
+          `📅 *Llegada:* ${formatFecha(lead?.fecha_checkin || '')}\n` +
+          `📅 *Salida:* ${formatFecha(lead?.fecha_checkout || '')}\n` +
+          `👥 *Personas:* ${num}\n\n` +
+          `Contactar para confirmar disponibilidad y cerrar.`
+        )
       }
 
     } else if (fase === 'tipo_loft') {
@@ -671,6 +687,10 @@ export async function POST(request: Request) {
           )
         }
       }
+
+    } else if (fase === 'esperando_asesor') {
+      response = `Ya tengo tus datos ✅ Un asesor te contactará en breve para confirmar disponibilidad. Si tienes alguna otra duda mientras tanto, con gusto te ayudo. 😊`
+      nextFase = 'esperando_asesor'
 
     } else {
       // Fase desconocida — reiniciar
