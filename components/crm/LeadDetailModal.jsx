@@ -15,7 +15,7 @@ export default function LeadDetailModal({
   setSelectedLead,
   updateNotas,
   updateLeadField,
-  openWA,
+  goToConversation,
   activeConversation,
   getLeadNextStep,
   leadTimelineLoading,
@@ -383,9 +383,11 @@ export default function LeadDetailModal({
                     </div>
                   </>
                 )}
-                <button className="btn btn-wa" style={{ fontSize: 12, padding: "7px 14px" }} onClick={() => openWA(lead)}>
-                  📱 Abrir WhatsApp
-                </button>
+                {activeConversation && (
+                  <button className="btn btn-wa" style={{ fontSize: 12, padding: "7px 14px" }} onClick={() => goToConversation(lead)}>
+                    💬 Ver conversación
+                  </button>
+                )}
               </div>
             );
           })()}

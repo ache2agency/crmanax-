@@ -43,15 +43,6 @@ const SESSION_HOURS = 12;
 const formatPeso = (v) => `$${Number(v).toLocaleString("es-MX")}`;
 const todayCST = () => new Date().toLocaleDateString("en-CA", { timeZone: "America/Mexico_City" });
 
-const WA_TEMPLATES = {
-  nuevo_contacto:     (nombre) => `¡Hola! Qué bueno que nos contactas. Gracias por tu interés en Anaxágoras 41. Para poder darte la mejor información, ayúdame con: tu nombre, las fechas que te interesan y cuántas personas se alojarían.`,
-  cotizado:           (nombre) => `Hola ${nombre}. Te doy seguimiento a la cotización. ¿Tienes alguna duda sobre el loft o las fechas?`,
-  deposito_pendiente: (nombre) => `Hola ${nombre}. Para apartar el loft y las fechas necesitamos el depósito en garantía. ¿Cómo te queda?`,
-  reservado:          (nombre) => `¡Hola ${nombre}! Tu reserva está confirmada. Te enviaremos toda la información que necesitas para tu llegada.`,
-  hospedado:          (nombre) => `¡Hola ${nombre}! Esperamos que estés disfrutando tu estancia en Anaxágoras 41. Estamos para lo que necesites.`,
-  completado:         (nombre) => `¡Hola ${nombre}! Fue un placer tenerte en Anaxágoras 41. ¿Nos ayudarías con una reseña? Tu opinión es muy importante para nosotros.`,
-  no_interesado:      (nombre) => `Hola ${nombre}. Gracias por tu tiempo. Si en algún momento reconsideras, estamos aquí para ayudarte.`,
-};
 
 const normalizeStage = (stage) => LEGACY_STAGE_MAP[stage] || stage || "nuevo_contacto";
 const AGENDAR_LINK = "https://crmanax.vercel.app/agendar/";
@@ -1215,11 +1206,17 @@ export default function CRM() {
   const pipelineValue = leads.filter((l) => !["rentado", "no_interesado"].includes(normalizeStage(l.stage))).reduce((a, b) => a + b.valor, 0);
   const convRate = leads.length ? Math.round((leads.filter((l) => normalizeStage(l.stage) === "rentado").length / leads.length) * 100) : 0;
 
-  const openWA = (lead) => {
-    const template = WA_TEMPLATES[normalizeStage(lead.stage)] || WA_TEMPLATES["interesado"];
-    const msg = encodeURIComponent(template((lead.nombre || '').split(" ")[0] || 'estimado/a'));
-    const num = lead.whatsapp.replace(/\D/g, "");
-    window.open(`https://wa.me/${num}?text=${msg}`, "_blank");
+  const hasConversation = (lead) => whatsConvs.some(c => c.lead_id === lead.id || c.whatsapp === lead.whatsapp);
+
+  const goToConversation = (lead) => {
+    const conv = whatsConvs.find(c => c.lead_id === lead.id || c.whatsapp === lead.whatsapp);
+    fetchWhatsConvs().then(() => {
+      setView("convs");
+      if (conv) {
+        setSelectedConv(conv);
+        fetchConvMessages(conv.id);
+      }
+    });
   };
 
   const guardarCita = async () => {
@@ -1679,17 +1676,8 @@ export default function CRM() {
             handleDrop={handleDrop}
             setSelectedLead={setSelectedLead}
             getNombreVendedor={getNombreVendedor}
-            goToConversation={(lead) => {
-              const conv = whatsConvs.find(c => c.lead_id === lead.id || c.whatsapp === lead.whatsapp);
-              fetchWhatsConvs().then(() => {
-                setView("convs");
-                if (conv) {
-                  setSelectedConv(conv);
-                  fetchConvMessages(conv.id);
-                }
-              });
-            }}
-            hasConversation={(lead) => whatsConvs.some(c => c.lead_id === lead.id || c.whatsapp === lead.whatsapp)}
+            goToConversation={goToConversation}
+            hasConversation={hasConversation}
           />
         )}
 
@@ -1702,7 +1690,8 @@ export default function CRM() {
             setSelectedLead={setSelectedLead}
             formatPeso={formatPeso}
             getNombreVendedor={getNombreVendedor}
-            openWA={openWA}
+            goToConversation={goToConversation}
+            hasConversation={hasConversation}
           />
         )}
 
@@ -2268,8 +2257,7 @@ export default function CRM() {
             moveStage={moveStage}
             setSelectedLead={setSelectedLead}
             updateNotas={updateNotas}
-            WA_TEMPLATES={WA_TEMPLATES}
-            openWA={openWA}
+            goToConversation={goToConversation}
             sendLeadInformation={sendLeadInformation}
             sendingInfoLeadId={sendingInfoLeadId}
             leadInfoDraft={leadInfoDraft}
@@ -2305,31 +2293,7 @@ export default function CRM() {
         guardarCita={guardarCita}
       />
 
-      {/* CHATBOT IA */}
-      <button
-        onClick={() => setChatOpen((v) => !v)}
-        style={{
-          position: "fixed",
-          bottom: 24,
-          right: 24,
-          zIndex: 900,
-          width: 52,
-          height: 52,
-          borderRadius: "50%",
-          border: "none",
-          background: "#2C4A8C",
-          color: "#ffffff",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          boxShadow: "0 8px 24px rgba(44,74,140,0.35)",
-          cursor: "pointer",
-          fontSize: 22,
-        }}
-        aria-label="Abrir asistente de ventas"
-      >
-        💬
-      </button>
+      {/* CHATBOT IA — botón oculto a pedido de Harold (2026-07-15), lógica queda intacta por si se reactiva */}
 
       {chatOpen && (
         <div
