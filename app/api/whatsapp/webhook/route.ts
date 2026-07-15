@@ -3,7 +3,14 @@ import {
   getMetaConfig,
   normalizePhoneNumber,
   sendMetaWhatsAppMessage,
+  sendMetaWhatsAppTemplate,
 } from '@/lib/whatsapp/provider'
+
+// Template aprobado en Meta como respaldo — se usa solo si el texto libre falla
+// (típicamente porque la ventana de 24h con el admin ya se cerró). Los templates
+// de WhatsApp se entregan sin importar la ventana. Ver CLAUDE.md / PROYECTOS.md
+// para el proceso de creación/aprobación en Meta Business Manager.
+const ALERT_TEMPLATE_NAME = 'alerta_admin'
 
 const ADMIN_WHATSAPP_NUMBERS = (process.env.ALERT_WHATSAPP_NUMBER || '+525534815126,+527471028306')
   .split(',')
@@ -18,7 +25,12 @@ async function alertarAdmin(mensaje: string) {
     try {
       await sendMetaWhatsAppMessage({ to: numero, body: mensaje })
     } catch (e) {
-      console.error(`[webhook] alerta admin falló (${numero}):`, e)
+      console.error(`[webhook] alerta admin (texto libre) falló (${numero}), reintentando con template:`, e)
+      try {
+        await sendMetaWhatsAppTemplate({ to: numero, templateName: ALERT_TEMPLATE_NAME, parameters: [mensaje] })
+      } catch (e2) {
+        console.error(`[webhook] alerta admin (template) también falló (${numero}):`, e2)
+      }
     }
   }
 }
