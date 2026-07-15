@@ -589,12 +589,6 @@ export default function ConversationsPanel({
                 <textarea
                   value={agentMessage}
                   onChange={(e) => setAgentMessage(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && !e.shiftKey) {
-                      e.preventDefault();
-                      if (!sendingAgent && agentMessage.trim()) sendAgentReply();
-                    }
-                  }}
                   rows={1}
                   placeholder="Escribe un mensaje..."
                 />
