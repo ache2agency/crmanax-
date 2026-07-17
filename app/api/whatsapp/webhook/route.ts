@@ -23,17 +23,23 @@ const ADMIN_WHATSAPP_NUMBERS = (process.env.ALERT_WHATSAPP_NUMBER || '+525534815
 const ADMIN_WHATSAPP_NUMBERS_NORMALIZED = new Set(ADMIN_WHATSAPP_NUMBERS.map(normalizePhoneNumber))
 const ADMIN_TEST_MODE_MINUTES = 30
 
+// Meta puede "aceptar" un mensaje de texto libre (devuelve wamid, no lanza error)
+// y aun así nunca entregarlo si la ventana de 24h ya se cerró — ese fallo real solo
+// llega después por el webhook de "status", que hoy no procesamos. Por eso ya no
+// basta con mandar el template solo cuando el texto libre truena: se manda SIEMPRE
+// además del texto libre, como red de seguridad garantizada (confirmado 2026-07-17:
+// un texto libre "aceptado" nunca le llegó a Harold).
 async function alertarAdmin(mensaje: string) {
   for (const numero of ADMIN_WHATSAPP_NUMBERS) {
     try {
       await sendMetaWhatsAppMessage({ to: numero, body: mensaje })
     } catch (e) {
-      console.error(`[webhook] alerta admin (texto libre) falló (${numero}), reintentando con template:`, e)
-      try {
-        await sendMetaWhatsAppTemplate({ to: numero, templateName: ALERT_TEMPLATE_NAME })
-      } catch (e2) {
-        console.error(`[webhook] alerta admin (template) también falló (${numero}):`, e2)
-      }
+      console.error(`[webhook] alerta admin (texto libre) falló (${numero}):`, e)
+    }
+    try {
+      await sendMetaWhatsAppTemplate({ to: numero, templateName: ALERT_TEMPLATE_NAME })
+    } catch (e2) {
+      console.error(`[webhook] alerta admin (template) falló (${numero}):`, e2)
     }
   }
 }
