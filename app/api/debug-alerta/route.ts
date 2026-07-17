@@ -24,9 +24,24 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
   }
 
+  const url = new URL(request.url)
+  const forzarTemplate = url.searchParams.get('mode') === 'template'
+
   const resultados = []
   for (const numero of ADMIN_WHATSAPP_NUMBERS) {
     const resultado: Record<string, unknown> = { numero }
+
+    if (forzarTemplate) {
+      try {
+        const r2 = await sendMetaWhatsAppTemplate({ to: numero, templateName: 'alerta_reactivacion' })
+        resultado.template = { ok: true, id: r2.id }
+      } catch (e2) {
+        resultado.template = { ok: false, error: e2 instanceof Error ? e2.message : String(e2) }
+      }
+      resultados.push(resultado)
+      continue
+    }
+
     try {
       const r = await sendMetaWhatsAppMessage({
         to: numero,
