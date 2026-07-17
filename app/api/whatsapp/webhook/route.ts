@@ -163,6 +163,12 @@ function parseDate(text: string): string | null {
   return `${year}-${month}-${day}`
 }
 
+// Compara strings 'YYYY-MM-DD' — funciona porque ese formato ordena igual lexicográfica y cronológicamente
+function esFechaAnteriorAHoy(fecha: string): boolean {
+  const hoy = new Date().toISOString().slice(0, 10)
+  return fecha < hoy
+}
+
 async function getAdminId(
   supabase: Awaited<ReturnType<typeof createServiceRoleClient>>
 ): Promise<string | null> {
@@ -258,6 +264,12 @@ const MSG = {
 
   errorFecha: () =>
     `No pude entender esa fecha 😅\n\nEscríbela así: *DD/MM/YYYY*\nEjemplo: 15/06/2026`,
+
+  errorFechaPasada: () =>
+    `Esa fecha ya pasó 😅\n\nEscribe una fecha de llegada a partir de hoy.\nEjemplo: 15/06/2026`,
+
+  errorFechaCheckoutInvalida: () =>
+    `La fecha de salida debe ser *posterior* a la de llegada 😅\n\nEscríbela así: *DD/MM/YYYY*`,
 
   errorPersonas: () =>
     `Por favor escribe el número de personas (ej: *2*)`,
@@ -580,6 +592,9 @@ export async function POST(request: Request) {
       if (!fecha) {
         response = MSG.errorFecha()
         nextFase = 'checkin'
+      } else if (esFechaAnteriorAHoy(fecha)) {
+        response = MSG.errorFechaPasada()
+        nextFase = 'checkin'
       } else {
         if (leadId) await supabase.from('leads').update({ fecha_checkin: fecha }).eq('id', leadId)
         response = `Llegada: *${text}* ✅\n\n` + MSG.pedirCheckout()
@@ -592,9 +607,17 @@ export async function POST(request: Request) {
         response = MSG.errorFecha()
         nextFase = 'checkout'
       } else {
-        if (leadId) await supabase.from('leads').update({ fecha_checkout: fecha }).eq('id', leadId)
-        response = `Salida: *${text}* ✅\n\n` + MSG.pedirPersonas()
-        nextFase = 'personas'
+        const { data: leadCheckin } = leadId
+          ? await supabase.from('leads').select('fecha_checkin').eq('id', leadId).maybeSingle()
+          : { data: null }
+        if (leadCheckin?.fecha_checkin && fecha <= leadCheckin.fecha_checkin) {
+          response = MSG.errorFechaCheckoutInvalida()
+          nextFase = 'checkout'
+        } else {
+          if (leadId) await supabase.from('leads').update({ fecha_checkout: fecha }).eq('id', leadId)
+          response = `Salida: *${text}* ✅\n\n` + MSG.pedirPersonas()
+          nextFase = 'personas'
+        }
       }
 
     } else if (fase === 'personas') {
