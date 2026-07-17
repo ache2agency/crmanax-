@@ -5,6 +5,7 @@ import {
   sendMetaWhatsAppMessage,
   sendMetaWhatsAppTemplate,
 } from '@/lib/whatsapp/provider'
+import { enviarPushATodos } from '@/lib/push'
 
 // Template aprobado en Meta como respaldo — se usa solo si el texto libre falla
 // (típicamente porque la ventana de 24h con el admin ya se cerró). No lleva
@@ -423,7 +424,7 @@ export async function POST(request: Request) {
       .limit(1)
       .maybeSingle()
 
-    // Si está en modo humano, solo loguear
+    // Si está en modo humano, solo loguear (el bot no responde, así que el push es la única alerta)
     if (conv?.modo_humano) {
       await supabase.from('whatsapp_mensajes').insert([{
         conversacion_id: conv.id,
@@ -431,6 +432,14 @@ export async function POST(request: Request) {
         contenido: text,
         raw_payload: rawPayload,
       }])
+      try {
+        await enviarPushATodos({
+          title: `💬 ${profileName || from}`,
+          body: text.length > 120 ? `${text.slice(0, 117)}...` : text,
+        })
+      } catch (e) {
+        console.error('[webhook] error enviando push (modo humano):', e)
+      }
       return Response.json({ ok: true, human_mode: true })
     }
 
@@ -533,6 +542,18 @@ export async function POST(request: Request) {
         contenido: text,
         raw_payload: rawPayload,
       }])
+    }
+
+    // Notificación push (app instalada en el teléfono) — un fallo aquí no debe romper la respuesta del bot.
+    // Se espera (await) porque en serverless el proceso puede cortarse justo al responder,
+    // dejando el envío a medias si se dispara sin esperar.
+    try {
+      await enviarPushATodos({
+        title: `💬 ${profileName || from}`,
+        body: text.length > 120 ? `${text.slice(0, 117)}...` : text,
+      })
+    } catch (e) {
+      console.error('[webhook] error enviando push:', e)
     }
 
     // ── State machine ────────────────────────────────────────────────────────

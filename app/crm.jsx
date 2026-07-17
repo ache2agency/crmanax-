@@ -69,6 +69,9 @@ export default function CRM() {
   const [toast, setToast] = useState(null);
   const [currentUser, setCurrentUser] = useState(null);
   const [currentProfile, setCurrentProfile] = useState(null);
+  const [pushPermission, setPushPermission] = useState(
+    typeof window !== "undefined" && "Notification" in window ? Notification.permission : "unsupported"
+  );
   const [vendedores, setVendedores] = useState([]);
   const [lofts, setLofts] = useState([]);
   const [newLead, setNewLead] = useState({ nombre: "", email: "", whatsapp: "", tipo_renta: "noche", fecha_checkin: "", fecha_checkout: "", num_personas: 1, loft_id: "", presupuesto: "", valor: "", notas: "", asignado_a: "" });
@@ -403,6 +406,12 @@ export default function CRM() {
     }
     setCurrentUser(user);
 
+    // Si ya había dado permiso antes, renueva la suscripción push en silencio
+    // (no vuelve a pedir permiso — el navegador solo pregunta si sigue en "default")
+    if (typeof window !== "undefined" && "Notification" in window && Notification.permission === "granted") {
+      activarNotificaciones(user.id);
+    }
+
     // Cargar o crear perfil
     let { data: profile } = await supabase.from("profiles").select("*").eq("id", user.id).single();
     if (!profile) {
@@ -429,6 +438,42 @@ export default function CRM() {
   const fetchLofts = async () => {
     const { data } = await supabase.from("lofts").select("id, nombre, tipo").eq("activo", true).order("orden");
     setLofts(data || []);
+  };
+
+  const urlBase64ToUint8Array = (base64String) => {
+    const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
+    const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
+    const rawData = window.atob(base64);
+    return Uint8Array.from([...rawData].map((c) => c.charCodeAt(0)));
+  };
+
+  const activarNotificaciones = async (userId) => {
+    if (typeof window === "undefined" || !("serviceWorker" in navigator) || !("PushManager" in window)) return;
+    const vapidPublicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
+    if (!vapidPublicKey) return;
+
+    try {
+      const permission = await Notification.requestPermission();
+      setPushPermission(permission);
+      if (permission !== "granted") return;
+
+      const registration = await navigator.serviceWorker.register("/sw.js");
+      let subscription = await registration.pushManager.getSubscription();
+      if (!subscription) {
+        subscription = await registration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array(vapidPublicKey),
+        });
+      }
+
+      await fetch("/api/push/subscribe", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ subscription, userId }),
+      });
+    } catch (e) {
+      console.error("Error activando notificaciones push:", e);
+    }
   };
 
   const fetchLeads = async (userId, admin) => {
@@ -1549,6 +1594,14 @@ export default function CRM() {
           {/* Desktop user */}
           <div className="desktop-user" style={{ display: "flex", alignItems: "center", gap: 12 }}>
             <span style={{ fontSize: 11, color: "#555" }}>{currentProfile?.email || currentUser?.email}</span>
+            {pushPermission === "default" && (
+              <button
+                className="btn btn-ghost"
+                style={{ fontSize: 11, color: "rgba(255,255,255,0.7)", border: "1px solid rgba(255,255,255,0.25)" }}
+                onClick={() => activarNotificaciones(currentUser.id)}
+                title="Recibe una notificación en el teléfono cada vez que llegue un mensaje nuevo"
+              >🔔 Activar notificaciones</button>
+            )}
             <button className="btn btn-ghost" style={{ fontSize: 11, color: "rgba(255,255,255,0.7)", border: "1px solid rgba(255,255,255,0.25)" }} onClick={() => setShowAyuda(true)}>? Ayuda</button>
             <button className="btn btn-primary" onClick={() => setShowForm(true)}>+ NUEVO LEAD</button>
           </div>
@@ -1582,6 +1635,14 @@ export default function CRM() {
                 {item.label}
               </button>
             ))}
+            {pushPermission === "default" && (
+              <button
+                className="nav-btn"
+                onClick={() => { activarNotificaciones(currentUser.id); setMobileMenuOpen(false); }}
+              >
+                🔔 Activar notificaciones
+              </button>
+            )}
           </div>
         )}
       </div>
