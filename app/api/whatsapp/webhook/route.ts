@@ -310,6 +310,9 @@ const MSG = {
 
   noInfo: () =>
     `Esa información no la tengo aquí. Te recomiendo escribirnos directamente al *+52 55 3481 5126* o a *anaxagoras41suite@gmail.com*. 😊`,
+
+  fotos: () =>
+    `📸 Aquí puedes ver fotos de las instalaciones y los lofts: https://anaxagoras41suite.arqarri.com/`,
 }
 
 // ─── FAQ detector ─────────────────────────────────────────────────────────────
@@ -321,6 +324,7 @@ function detectFaq(textLower: string): string | null {
   if (/estacionamiento|parking|carro|auto|coche/.test(textLower)) return 'estacionamiento'
   if (/roof|terraza|evento|renta.*espacio|event/.test(textLower)) return 'rooftop'
   if (/segur|cámara|camara|acceso|cerradura/.test(textLower)) return 'seguridad'
+  if (/foto|imagen|imágenes|imagenes|galer[ií]a|instalac/.test(textLower)) return 'fotos'
   return null
 }
 
@@ -332,6 +336,7 @@ function faqResponse(key: string): string {
     case 'estacionamiento': return MSG.estacionamiento()
     case 'rooftop': return MSG.rooftop()
     case 'seguridad': return MSG.seguridad()
+    case 'fotos': return MSG.fotos()
     default: return MSG.noInfo()
   }
 }
