@@ -24,6 +24,7 @@ async function enviarSeguimientos(supabase: ReturnType<typeof createServiceRoleC
     .select('id, whatsapp, fase')
     .eq('estado', 'abierta')
     .eq('seguimiento_enviado', false)
+    .eq('humano_intervino', false)
     .neq('fase', 'confirmado')
     .gte('ultimo_mensaje_at', desde)
     .lte('ultimo_mensaje_at', hasta)

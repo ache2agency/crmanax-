@@ -57,6 +57,7 @@ export async function POST(request: Request) {
                 ultimo_mensaje_at: now,
                 fase: fase || 'seguimiento',
                 modo_humano: true,
+                humano_intervino: true,
                 tomado_por: agentUserId || null,
               },
             ])
@@ -72,6 +73,7 @@ export async function POST(request: Request) {
               ultimo_mensaje_at: now,
               fase: fase || 'seguimiento',
               modo_humano: true,
+              humano_intervino: true,
               tomado_por: agentUserId || null,
             })
             .eq('id', conversacionId)
@@ -147,6 +149,7 @@ export async function POST(request: Request) {
               ultimo_mensaje_at: now,
               fase: fase || 'seguimiento',
               modo_humano: true,
+              humano_intervino: true,
               tomado_por: agentUserId || null,
             },
           ])
