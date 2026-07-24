@@ -9,6 +9,30 @@ import {
   sendMetaWhatsAppMessage,
 } from '@/lib/whatsapp/provider'
 
+const PATRON_COTIZACION = /\$[\d,]+|MXN|pesos|disponibilidad|disponible|contamos con|tendr[ií]a|dep[oó]sito|garant[ií]a/i
+
+function esMensajeDeCotizacion(body: string): boolean {
+  return PATRON_COTIZACION.test(body)
+}
+
+async function actualizarStageSiCotizacion(
+  supabase: Awaited<ReturnType<typeof createServiceRoleClient>>,
+  leadId: string,
+  body: string
+) {
+  if (!esMensajeDeCotizacion(body)) return
+
+  const { data: lead } = await supabase
+    .from('leads')
+    .select('stage')
+    .eq('id', leadId)
+    .maybeSingle()
+
+  if (lead?.stage === 'nuevo_contacto') {
+    await supabase.from('leads').update({ stage: 'cotizado' }).eq('id', leadId)
+  }
+}
+
 export async function POST(request: Request) {
   try {
     const { to, body, leadId, agentUserId, fase } = (await request.json()) as {
@@ -88,6 +112,8 @@ export async function POST(request: Request) {
             },
           ])
         }
+
+        await actualizarStageSiCotizacion(supabase, leadId, body)
       }
 
       return NextResponse.json({
@@ -179,6 +205,8 @@ export async function POST(request: Request) {
           },
         ])
       }
+
+      await actualizarStageSiCotizacion(supabase, leadId, body)
     }
 
     return NextResponse.json({
