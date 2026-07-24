@@ -63,6 +63,11 @@ Política: *un acceso = una persona.* Cada huésped registra su ingreso individu
 🅿️ Parque Delta (a pasos del edificio)
 
 ¿Hay algo más en que te pueda ayudar?` },
+    { label: "Horario de atención", texto: `🛎️ *Horario de Oficina*
+⛅️ 8:00 am - 8:00 pm 🌙
+
+Es un gusto atenderle.` },
+    { label: "Sitio web", texto: `https://anaxagoras41suite.arqarri.com/` },
   ]},
   { grupo: "Tipos de renta", items: [
     { label: "Renta por noche", texto: `*Renta por noche — Anaxágoras 41:*
@@ -97,29 +102,69 @@ Incluye: mobiliario, barra con tarja, bocina, proyector y sanitario.
 _No se permite equipo de audio externo ni grupos musicales._
 
 Para reservar el Roof Top escríbenos al *+52 55 3481 5126*.` },
+    { label: "Precio Loft Chico", texto: `Costo y detalles en el link:
+https://anaxagoras41suite.arqarri.com/loftChico.php` },
+    { label: "Precio Loft Mediano", texto: `Costos y detalles en el link:
+https://anaxagoras41suite.arqarri.com/loftMediano.php` },
+    { label: "Precio Loft Grande", texto: `Costos y detalles en el link:
+https://anaxagoras41suite.arqarri.com/loftGrande.php` },
   ]},
   { grupo: "Proceso de reserva", items: [
-    { label: "Documentos para rentar", texto: `[BORRADOR — confirmar con Harold]
+    { label: "Documentos para rentar", texto: `Le explico;
 
-Para tu reserva vamos a necesitar:
+1. Enviar los documentos al siguiente correo electrónico: anaxagoras41suite@gmail.com
+2. Una vez teniendo el visto bueno de los documentos se hace la transferencia por el monto del depósito en garantía (con esto se aparta el loft y fechas)
+3. A tu llegada se paga en efectivo o en transferencia bancaria al momento la renta que va corriendo` },
+    { label: "Depósito en garantía (por noche)", texto: `Más depósito en garantía de $649.00 pesos vía transferencia bancaria (se regresa de 5 a 3 días antes de finalizar el mes, una vez que haya concluido la reserva y todo se encuentre en buen estado, como lo recibió el huésped)` },
+    { label: "Depósito en garantía (por mes)", texto: `Más depósito en garantía de $5,000.00 pesos vía transferencia bancaria (se regresa de 5 a 3 días antes de finalizar el mes, una vez que haya concluido la reserva y todo se encuentre en buen estado, como lo recibió el huésped)` },
+    { label: "Datos bancarios (depósito/pago)", texto: `Banco: Bajío
+Clabe interbancaria: 030180900022606582
+Beneficiario: TALHUMCOM S.A de C.V.` },
+    { label: "Concepto transferencia — depósito", texto: `Monto: $649.00 pesos
+Concepto: "depósito en garantía" *ningún otro dato* por favor` },
+    { label: "Concepto transferencia — pago renta", texto: `Concepto: "tu nombre completo" *ningún otro dato* por favor` },
+    { label: "Devolución de depósito en garantía", texto: `Por favor me ayuda con los siguientes datos de la cuenta donde se originó el movimiento bancario, para proceder con la devolución del depósito en garantía:
 
-📄 Identificación oficial (ambos lados)
-📧 Tu correo para registrarte en la app Yale Connect (acceso al edificio)
-💳 Depósito en garantía (te confirmo el monto exacto)
+*Nombre de beneficiario
+*Banco
+*Clave interbancaria
 
-En cuanto los tengas me los compartes y avanzamos con tu reserva. 😊` },
-    { label: "Depósito en garantía", texto: `[BORRADOR — confirmar monto/condiciones con Harold]
-
-El depósito en garantía se paga antes de tu llegada y se devuelve unos días después de tu checkout, siempre que todo esté en orden.
-
-En breve te confirmo el monto exacto según el loft y tiempo de renta.` },
-    { label: "Confirmar disponibilidad / visita", texto: `[BORRADOR — confirmar proceso de visitas con Harold]
-
-Con gusto te ayudo a agendar una visita para conocer el loft antes de confirmar. ¿Qué día y horario te acomoda?` },
+Gracias` },
+    { label: "Requisitos arrendamiento mensual", texto: `https://anaxagoras41suite.arqarri.com/#blog` },
+    { label: "Formato de cotización", texto: `Loft
+Check in: /26 a partir de las 03pm
+Check out: /26 a las 11am. (puntual)
+Costo por noche: $.00 pesos
+No. de noches: noches
+No. de personas: máximo
+*Total a pagar: $.00 pesos*` },
+    { label: "Confirmar disponibilidad / visita", texto: `Si gusta se le puede agendar una cita para que conozca el lugar.` },
   ]},
   { grupo: "Seguimiento", items: [
+    { label: "Información, primer contacto", texto: `Gracias por ponerte en contacto con Anaxagoras 41, para brindarte un mejor servicio por favor indica lo siguiente:
+
+*Nombre
+*Fechas aprox. de llegada y duración de tu estadía
+*No. de personas a alojarse
+*Medio en que nos viste publicado.
+
+Responderemos lo antes posible😊😊` },
     { label: "Recordatorio amable", texto: `Hola de nuevo 😊 Solo quería saber si sigues interesad@ en alguno de nuestros lofts, o si tienes alguna duda que te pueda resolver.` },
     { label: "Cierre / agradecimiento", texto: `¡Con gusto! Quedamos al pendiente. Si más adelante tienes dudas o quieres retomar, aquí estamos. 😊` },
+  ]},
+  { grupo: "Durante y después de la estancia", items: [
+    { label: "Limpieza programada", texto: `Limpieza General "semanal"
+☺️ Deseo tu estancia sea placentera ✅ en el Loft 🏠, para mañana se está programando la Limpieza 🧹 🧽 General 🫧 y cambio de Blancos a las` },
+    { label: "Aviso sobre manchas en blancos", texto: `***POR FAVOR EVITAR MANCHAR LAS TOALLAS DE MAQUILLAJE, TINTE DE PELO, SANGRE, FILTRO SOLAR O LIMPIADOR DE CALZADO, SE HARA CARGO EXTRA***
+Gracias 😊` },
+    { label: "Reseña post-estancia (reserva directa)", texto: `Hola 👋🏼
+Espero hayas disfrutado de tu estancia en AnAxAgorAs 41, por favor te pedimos nos ayudes a compartir tu reseña para otros usuarios
+https://search.google.com/local/writereview?placeid=ChIJ131HARr_0YUR6F016oENjM0&source=g.page.m.ia._&laa=nmx-review-solicitation-ia2
+
+Para el equipo de AnAxAgorAs 41 es muy importante tu retroalimentación, nos ayuda para seguir brindando un servicio de excelente calidad.
+
+Atte. AnAxAgorAs 41
+"con AlmA de HogAr"` },
   ]},
 ];
 
