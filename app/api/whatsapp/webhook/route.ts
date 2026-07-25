@@ -3,17 +3,8 @@ import {
   getMetaConfig,
   normalizePhoneNumber,
   sendMetaWhatsAppMessage,
-  sendMetaWhatsAppTemplate,
 } from '@/lib/whatsapp/provider'
 import { enviarPushATodos } from '@/lib/push'
-
-// Template aprobado en Meta como respaldo — se usa solo si el texto libre falla
-// (típicamente porque la ventana de 24h con el admin ya se cerró). No lleva
-// datos del lead (sin variables): solo avisa que hay algo nuevo y trae un botón
-// de respuesta rápida que, al tocarlo, reabre la ventana de 24h para que las
-// siguientes alertas de texto libre vuelvan a entregarse. Enviado a revisión de
-// Meta el 2026-07-15 — ver PROYECTOS.md para el estado de aprobación.
-const ALERT_TEMPLATE_NAME = 'alerta_reactivacion'
 
 const ADMIN_WHATSAPP_NUMBERS = (process.env.ALERT_WHATSAPP_NUMBER || '+525534815126,+527471028306')
   .split(',')
@@ -23,12 +14,6 @@ const ADMIN_WHATSAPP_NUMBERS = (process.env.ALERT_WHATSAPP_NUMBER || '+525534815
 const ADMIN_WHATSAPP_NUMBERS_NORMALIZED = new Set(ADMIN_WHATSAPP_NUMBERS.map(normalizePhoneNumber))
 const ADMIN_TEST_MODE_MINUTES = 30
 
-// Meta puede "aceptar" un mensaje de texto libre (devuelve wamid, no lanza error)
-// y aun así nunca entregarlo si la ventana de 24h ya se cerró — ese fallo real solo
-// llega después por el webhook de "status", que hoy no procesamos. Por eso ya no
-// basta con mandar el template solo cuando el texto libre truena: se manda SIEMPRE
-// además del texto libre, como red de seguridad garantizada (confirmado 2026-07-17:
-// un texto libre "aceptado" nunca le llegó a Harold).
 async function alertarAdmin(mensaje: string) {
   for (const numero of ADMIN_WHATSAPP_NUMBERS) {
     try {
@@ -36,12 +21,22 @@ async function alertarAdmin(mensaje: string) {
     } catch (e) {
       console.error(`[webhook] alerta admin (texto libre) falló (${numero}):`, e)
     }
-    try {
-      await sendMetaWhatsAppTemplate({ to: numero, templateName: ALERT_TEMPLATE_NAME })
-    } catch (e2) {
-      console.error(`[webhook] alerta admin (template) falló (${numero}):`, e2)
-    }
   }
+}
+
+// Cualquier mensaje entrante de un número admin (texto, o el toque del botón
+// del template de nudge) reabre su ventana de 24h del lado de Meta — se
+// registra aquí sin importar el tipo de mensaje, porque parseIncoming() solo
+// procesa mensajes de texto y de otro modo se perdería el toque del botón.
+async function registrarAperturaVentanaAdmin(
+  supabase: ReturnType<typeof createServiceRoleClient>,
+  payload: unknown
+) {
+  const from = extraerFromCrudo(payload)
+  if (!from || !ADMIN_WHATSAPP_NUMBERS_NORMALIZED.has(from)) return
+  await supabase
+    .from('admin_ventana_24h')
+    .upsert([{ whatsapp: from, ultima_apertura: new Date().toISOString() }])
 }
 
 async function alertarNuevoLead(profileName: string, from: string, primerMensaje: string) {
@@ -207,9 +202,28 @@ function isMetaPayload(payload: unknown): boolean {
   )
 }
 
-async function parseIncoming(request: Request): Promise<IncomingWhatsAppMessage | null> {
+function extraerMensajeCrudo(payload: unknown): Record<string, unknown> | null {
+  if (!isMetaPayload(payload)) return null
+  const p = payload as Record<string, unknown>
+  const entry = Array.isArray(p.entry) ? p.entry[0] as Record<string, unknown> : null
+  const change = Array.isArray(entry?.changes) ? (entry?.changes[0] as Record<string, unknown>) : null
+  const value = change?.value as Record<string, unknown> | null
+  if (!value) return null
+  const messages = Array.isArray(value.messages) ? value.messages : []
+  return (messages[0] as Record<string, unknown> | undefined) ?? null
+}
+
+// Número del remitente sin importar el tipo de mensaje (texto, botón de
+// template, imagen, etc.) — a diferencia de parseIncoming(), que solo procesa
+// mensajes de texto y de otro modo perdería el toque del botón del template.
+function extraerFromCrudo(payload: unknown): string | null {
+  const message = extraerMensajeCrudo(payload)
+  if (!message?.from) return null
+  return normalizePhoneNumber(message.from as string)
+}
+
+function parseIncoming(payload: unknown): IncomingWhatsAppMessage | null {
   try {
-    const payload = await request.json().catch(() => null)
     if (!isMetaPayload(payload)) return null
 
     const p = payload as Record<string, unknown>
@@ -225,8 +239,7 @@ async function parseIncoming(request: Request): Promise<IncomingWhatsAppMessage 
       return null
     }
 
-    const messages = Array.isArray(value.messages) ? value.messages : []
-    const message = messages[0] as Record<string, unknown> | undefined
+    const message = extraerMensajeCrudo(payload)
     if (!message?.from) return null
 
     const from = normalizePhoneNumber(message.from as string)
@@ -377,10 +390,17 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
-    const incoming = await parseIncoming(request)
+    const payload = await request.json().catch(() => null)
+    const supabase = createServiceRoleClient()
+
+    // Registrar apertura de ventana ANTES de filtrar por tipo de mensaje —
+    // el toque del botón del template de nudge no es tipo "text" y de otro
+    // modo se perdería.
+    await registrarAperturaVentanaAdmin(supabase, payload)
+
+    const incoming = parseIncoming(payload)
     if (!incoming) return Response.json({ ok: true, ignored: true })
 
-    const supabase = createServiceRoleClient()
     const { from, body, profileName, rawPayload } = incoming
     const text = body.trim()
     const textLower = text.toLowerCase()
