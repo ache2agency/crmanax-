@@ -48,6 +48,71 @@ async function alertarNuevoLead(profileName: string, from: string, primerMensaje
   )
 }
 
+const BOTON_SIGUE_INTERESADO = 'sí, envíame la info'
+const BOTON_YA_NO = 'ya no, gracias'
+
+// Toque de botón del template `seguimiento_solicitud_anax` (reactivación
+// manual de leads en esperando_asesor) — llega como message.type === "button",
+// no "text", por eso se maneja aparte de parseIncoming() y antes de su filtro.
+async function manejarBotonReactivacion(
+  supabase: ReturnType<typeof createServiceRoleClient>,
+  payload: unknown
+): Promise<boolean> {
+  const message = extraerMensajeCrudo(payload)
+  if (!message || message.type !== 'button') return false
+
+  const from = extraerFromCrudo(payload)
+  if (!from || ADMIN_WHATSAPP_NUMBERS_NORMALIZED.has(from)) return false
+
+  const botonTexto = (((message.button as Record<string, unknown> | undefined)?.text as string) || '').trim()
+  const botonLower = botonTexto.toLowerCase()
+
+  const { data: conv } = await supabase
+    .from('whatsapp_conversaciones')
+    .select('id, lead_id')
+    .eq('whatsapp', from)
+    .eq('fase', 'esperando_asesor')
+    .order('ultimo_mensaje_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  if (!conv) return false
+
+  let nombre = from
+  if (conv.lead_id) {
+    const { data: lead } = await supabase.from('leads').select('nombre').eq('id', conv.lead_id).maybeSingle()
+    if (lead?.nombre?.trim()) nombre = lead.nombre.trim()
+  }
+
+  await supabase.from('whatsapp_mensajes').insert([{
+    conversacion_id: conv.id,
+    rol: 'usuario',
+    contenido: botonTexto || '(botón sin texto)',
+    raw_payload: payload as Record<string, unknown>,
+  }])
+  await supabase.from('whatsapp_conversaciones').update({ ultimo_mensaje_at: new Date().toISOString() }).eq('id', conv.id)
+
+  if (botonLower === BOTON_YA_NO) {
+    if (conv.lead_id) await supabase.from('leads').update({ stage: 'no_interesado' }).eq('id', conv.lead_id)
+    await alertarAdmin(`🔴 *${nombre}* respondió que ya no le interesa (reactivación) — ${from}`)
+  } else if (botonLower === BOTON_SIGUE_INTERESADO) {
+    await alertarAdmin(`🟢 *${nombre}* confirmó que SIGUE interesado (reactivación) — ${from}. Contactar para dar seguimiento real.`)
+  } else {
+    await alertarAdmin(`💬 *${nombre}* respondió el botón "${botonTexto}" (reactivación) — ${from}`)
+  }
+
+  try {
+    await enviarPushATodos({
+      title: `🔔 Reactivación — ${nombre}`,
+      body: botonTexto || 'Respondió al mensaje de reactivación',
+    })
+  } catch (e) {
+    console.error('[webhook] error enviando push (reactivación):', e)
+  }
+
+  return true
+}
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type IncomingWhatsAppMessage = {
@@ -397,6 +462,9 @@ export async function POST(request: Request) {
     // el toque del botón del template de nudge no es tipo "text" y de otro
     // modo se perdería.
     await registrarAperturaVentanaAdmin(supabase, payload)
+
+    const botonManejado = await manejarBotonReactivacion(supabase, payload)
+    if (botonManejado) return Response.json({ ok: true, boton_reactivacion: true })
 
     const incoming = parseIncoming(payload)
     if (!incoming) return Response.json({ ok: true, ignored: true })
