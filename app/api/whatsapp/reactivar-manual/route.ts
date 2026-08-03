@@ -34,7 +34,7 @@ export async function POST(request: Request) {
 
   try {
     if (provider === 'meta') {
-      await sendMetaWhatsAppTemplate({ to: conv.whatsapp, templateName: 'seguimiento_general', parameters: [nombre] })
+      await sendMetaWhatsAppTemplate({ to: conv.whatsapp, templateName: 'seguimiento_solicitud_anax', parameters: [nombre] })
     } else {
       return Response.json({ error: 'Solo Meta soportado para reactivación' }, { status: 400 })
     }
@@ -43,7 +43,7 @@ export async function POST(request: Request) {
     return Response.json({ error: msg }, { status: 500 })
   }
 
-  const contenido = `Hola ${nombre} 👋 ¿Pudiste revisar la información que te compartimos? Si tienes alguna duda con gusto te ayudamos. 😊`
+  const contenido = `Hola ${nombre}, seguimos con tu solicitud de información sobre disponibilidad en Anaxágoras 41 para las fechas que nos compartiste. ¿Sigue vigente tu interés para que un asesor te confirme los detalles?`
   const now = new Date().toISOString()
 
   await supabase.from('whatsapp_mensajes').insert([{
