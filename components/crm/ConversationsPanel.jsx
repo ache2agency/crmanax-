@@ -189,6 +189,12 @@ function avatarColor(name) {
   return AVATAR_COLORS[h % AVATAR_COLORS.length];
 }
 
+function isConvUnread(c) {
+  if (!c.ultimo_mensaje_at) return false;
+  if (!c.visto_at) return true;
+  return new Date(c.ultimo_mensaje_at) > new Date(c.visto_at);
+}
+
 function dayKeyMx(date) {
   return date.toLocaleDateString("en-CA", { timeZone: "America/Mexico_City" });
 }
@@ -241,6 +247,7 @@ export default function ConversationsPanel({
   selectedConvOwner,
   selectedLeadAssigned,
   setHumanMode,
+  setConvVisto,
   setView,
   setSelectedLead,
   convMessages,
@@ -272,7 +279,15 @@ export default function ConversationsPanel({
       await fetchConvMessages(c.id);
       setAgentMessage("");
       setMobileView("chat");
+      if (isConvUnread(c)) setConvVisto(c, true);
     });
+  };
+
+  const handleMarcarNoLeido = () => {
+    if (!selectedConv) return;
+    setConvVisto(selectedConv, false);
+    setSelectedConv(null);
+    setMobileView("list");
   };
 
   const getDisplayName = (c) => {
@@ -317,6 +332,10 @@ export default function ConversationsPanel({
         .wa-item-row2 { display: flex; align-items: center; gap: 6px; }
         .wa-item-preview { font-size: 12px; color: #667781; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1; }
         .wa-badge { font-size: 10px; border-radius: 999px; padding: 1px 7px; font-weight: 600; flex-shrink: 0; }
+        .wa-item.unread .wa-item-name { font-weight: 800; color: #111b21; }
+        .wa-item.unread .wa-item-preview { color: #111b21; font-weight: 600; }
+        .wa-item.unread .wa-item-time { color: #25D366; font-weight: 700; }
+        .wa-unread-dot { width: 10px; height: 10px; border-radius: 50%; background: #25D366; flex-shrink: 0; }
 
         /* CHAT */
         .wa-chat { flex: 1; display: flex; flex-direction: column; background: ${WA_BG}; position: relative; min-height: 0; overflow: hidden; }
@@ -460,10 +479,11 @@ export default function ConversationsPanel({
                 const name = getDisplayName(c);
                 const owner = vendedores.find((v) => v.id === c.tomado_por);
                 const time = formatListTime(c.ultimo_mensaje_at);
+                const unread = isConvUnread(c);
                 return (
                   <div
                     key={c.id}
-                    className={`wa-item${selectedConv?.id === c.id ? " active" : ""}`}
+                    className={`wa-item${selectedConv?.id === c.id ? " active" : ""}${unread ? " unread" : ""}`}
                     onClick={() => handleSelectConv(c)}
                   >
                     <div className="wa-avatar" style={{ background: avatarColor(name) }}>
@@ -479,6 +499,7 @@ export default function ConversationsPanel({
                         <span className="wa-badge" style={{ background: getModeColor(c) + "22", color: getModeColor(c) }}>
                           {getPhaseLabel(c.fase)}
                         </span>
+                        {unread && <span className="wa-unread-dot" title="No leído" />}
                       </div>
                       {owner && (
                         <div style={{ fontSize: 10, color: "#8696a0", marginTop: 1 }}>{owner.nombre || owner.email}</div>
@@ -544,6 +565,14 @@ export default function ConversationsPanel({
                     title="Enviar plantilla de seguimiento cuando la ventana de 24h venció"
                   >
                     {sendingReactivacion ? "..." : "Reactivar"}
+                  </button>
+                  <button
+                    className="wa-ctrl-btn"
+                    style={{ background: "rgba(255,255,255,0.15)", color: "#fff" }}
+                    onClick={handleMarcarNoLeido}
+                    title="Marcar esta conversación como no leída"
+                  >
+                    No leído
                   </button>
                   <button
                     className="wa-ctrl-btn"
