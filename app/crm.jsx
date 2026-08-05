@@ -1031,6 +1031,8 @@ export default function CRM() {
       seguimiento: "Seguimiento",
       cerrado: "Cerrado",
       perdido: "Perdido",
+      confirmar_interes: "Esperando confirmación de precio",
+      no_interesado: "Descartado por precio",
     };
     return labels[fase] || fase || "Sin fase";
   };
@@ -1055,6 +1057,8 @@ export default function CRM() {
         seguimiento: ["#fef9c3", "#854d0e", "#fde047"],
         cerrado: ["#d1fae5", "#065f46", "#6ee7b7"],
         perdido: ["#fee2e2", "#991b1b", "#fca5a5"],
+        confirmar_interes: ["#fef9c3", "#854d0e", "#fde047"],
+        no_interesado: ["#fee2e2", "#991b1b", "#fca5a5"],
       };
       const [bg, color, border] = palette[value] || ["#f1f5f9", "#64748b", "#cbd5e1"];
       return { background: bg, color, border: `1px solid ${border}` };

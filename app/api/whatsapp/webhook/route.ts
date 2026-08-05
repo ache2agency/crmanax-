@@ -151,6 +151,65 @@ function calcularPrecio(tipo: string, loft: string, personas: number, checkin: s
   }
 }
 
+// Número de noches entre checkin y checkout (fechas 'YYYY-MM-DD'). Devuelve 0
+// si las fechas no son válidas o el rango no es positivo.
+function calcularNoches(checkin: string, checkout: string): number {
+  if (!checkin || !checkout) return 0
+  const d1 = new Date(checkin)
+  const d2 = new Date(checkout)
+  if (isNaN(d1.getTime()) || isNaN(d2.getTime())) return 0
+  const noches = Math.round((d2.getTime() - d1.getTime()) / (1000 * 60 * 60 * 24))
+  return noches > 0 ? noches : 0
+}
+
+// El flujo ya no pregunta tipo de renta (se quitó en julio por simplicidad) —
+// se infiere de las fechas: 28+ noches se trata como renta mensual.
+function inferirTipoRenta(checkin: string, checkout: string): 'noche' | 'mes' {
+  return calcularNoches(checkin, checkout) >= 28 ? 'mes' : 'noche'
+}
+
+// Rango de precio ESTIMADO para el mensaje automático antes de pasar con el
+// asesor. Usa las mismas tarifas que calcularPrecio()/MSG.precios() (vigentes
+// desde 2026-07-02). Solo aplica para 1-2 personas: el catálogo actual no
+// tiene ningún loft para más de 2 (Grande = hasta 2 personas), así que ese
+// caso se maneja aparte sin dar precio (ver fase 'personas' en el POST).
+function calcularRangoPrecio(
+  tipoRenta: 'noche' | 'mes',
+  personas: number,
+  noches: number
+): { min: number; max: number } | null {
+  if (personas > 2) return null
+  // Chico solo alcanza para 1 persona; Mediano y Grande alcanzan para 1-2.
+  const loftsQueAlcanzan = personas <= 1 ? ['chico', 'mediano', 'grande'] : ['mediano', 'grande']
+  const precios = loftsQueAlcanzan.map((loft) => {
+    if (tipoRenta === 'mes') {
+      if (loft === 'chico') return 12000
+      if (loft === 'grande') return personas <= 1 ? 16000 : 18000
+      return personas <= 1 ? 14000 : 16000 // mediano
+    }
+    // 'noche': tarifa plana × número de noches
+    const porNoche = loft === 'chico' ? 700 : loft === 'grande' ? 900 : 800
+    return porNoche * Math.max(noches, 1)
+  })
+  return { min: Math.min(...precios), max: Math.max(...precios) }
+}
+
+function formatRangoPrecio(rango: { min: number; max: number }): string {
+  const fmt = (n: number) => `$${n.toLocaleString('es-MX')}`
+  return rango.min === rango.max ? `${fmt(rango.min)} MXN` : `${fmt(rango.min)} – ${fmt(rango.max)} MXN`
+}
+
+// Respuestas sí/no a "¿te interesa este rango de precio?" (fase 'confirmar_interes').
+function esRespuestaAfirmativa(textLower: string): boolean {
+  const t = textLower.trim()
+  return /^(s[ií]\b|claro|va\b|dale|adelante|de acuerdo|correcto|me interesa|s[ií] me interesa|quiero|por supuesto|ok(?:ay)?\b)/.test(t)
+}
+
+function esRespuestaNegativa(textLower: string): boolean {
+  const t = textLower.trim()
+  return /^no\b/.test(t) || /\bya no\b/.test(t)
+}
+
 function nombreLoft(loft: string): string {
   if (loft === 'chico') return 'Loft Chico (~16 m², 1 persona)'
   if (loft === 'mediano') return 'Loft Mediano (~24 m², 1-2 personas)'
@@ -370,6 +429,19 @@ const MSG = {
   errorTipoLoft: () =>
     `Por favor elige una opción válida (escribe *1* o *2*).`,
 
+  // Precio estimado (rango) tras dar personas — fase 'personas' → 'confirmar_interes'.
+  rangoPrecio: (nombre: string, tipoRenta: 'noche' | 'mes', rango: { min: number; max: number }) =>
+    `¡Perfecto, *${nombre}*! 🙌 Con esos datos, el costo estimado ronda:\n\n` +
+    `💰 *${formatRangoPrecio(rango)}*${tipoRenta === 'mes' ? ' (mensual)' : ' (total de tu estancia)'}\n\n` +
+    `_Este precio es estimado — un asesor te confirma el precio exacto y la disponibilidad real._\n\n` +
+    `¿Te interesa este rango? Responde *sí* o *no* 😊`,
+
+  errorConfirmarInteres: () =>
+    `¿Me confirmas si te interesa ese rango de precio? Responde *sí* o *no* 🙏`,
+
+  cierreNoInteresado: () =>
+    `Entendido, gracias por tu tiempo 🙏 Si más adelante buscas algo en otro rango, aquí estamos.`,
+
   confirmado: (tipo: string, loft: string, checkin: string, checkout: string, personas: number, nombre: string) =>
     `Perfecto, *${nombre}*! 😊 Aquí está el resumen de tu solicitud:\n\n` +
     `🛏 *Loft:* ${nombreLoft(loft)}\n` +
@@ -435,12 +507,13 @@ function faqResponse(key: string): string {
 }
 
 function flowReminder(fase: string | null): string {
-  if (!fase || fase === 'saludo' || fase === 'nombre' || fase === 'confirmado' || fase === 'esperando_asesor') return ''
+  if (!fase || fase === 'saludo' || fase === 'nombre' || fase === 'confirmado' || fase === 'esperando_asesor' || fase === 'no_interesado') return ''
   if (fase === 'tipo_renta') return `\n\n${MSG.pedirTipoRenta()}`
   if (fase === 'checkin') return `\n\n${MSG.pedirCheckin()}`
   if (fase === 'checkout') return `\n\n${MSG.pedirCheckout()}`
   if (fase === 'personas') return `\n\n${MSG.pedirPersonas()}`
   if (fase === 'tipo_loft') return `\n\n_Elige el tipo de loft respondiendo *1* o *2*._`
+  if (fase === 'confirmar_interes') return `\n\n¿Te interesa el rango de precio? Responde *sí* o *no*.`
   return ''
 }
 
@@ -754,18 +827,60 @@ export async function POST(request: Request) {
         response = MSG.errorPersonas()
         nextFase = 'personas'
       } else {
-        if (leadId) {
-          await supabase.from('leads').update({ num_personas: num, stage: 'cotizado' }).eq('id', leadId)
-        }
         const { data: lead } = leadId
           ? await supabase.from('leads').select('nombre, fecha_checkin, fecha_checkout').eq('id', leadId).maybeSingle()
+          : { data: null }
+        const checkin = lead?.fecha_checkin || ''
+        const checkout = lead?.fecha_checkout || ''
+        const nombreLead = lead?.nombre || profileName || 'amigo/a'
+        const tipoRenta = inferirTipoRenta(checkin, checkout)
+        const noches = calcularNoches(checkin, checkout)
+
+        if (leadId) {
+          await supabase.from('leads').update({ num_personas: num, tipo_renta: tipoRenta, stage: 'cotizado' }).eq('id', leadId)
+        }
+
+        const rango = calcularRangoPrecio(tipoRenta, num, noches)
+
+        if (!rango) {
+          // Excepción real, no una limitación nuestra: el catálogo actual no
+          // tiene ningún loft para más de 2 personas (Grande = hasta 2), así
+          // que no hay rango que calcular. Se mantiene el comportamiento
+          // anterior — avisar al asesor de inmediato, sin pasar por el filtro
+          // de confirmación de precio (no aplica: no hay precio que confirmar).
+          response =
+            `¡Perfecto, *${nombreLead}*! 🙌 Ya tengo tus datos:\n\n` +
+            `📅 *Llegada:* ${formatFecha(checkin)}\n` +
+            `📅 *Salida:* ${formatFecha(checkout)}\n` +
+            `👥 *Personas:* ${num}\n\n` +
+            `Un asesor verificará la disponibilidad y se pondrá en contacto contigo en breve. 😊`
+          nextFase = 'esperando_asesor'
+          await alertarAdmin(
+            `🆕 *Lead listo — verificar disponibilidad*\n\n` +
+            `👤 *Nombre:* ${nombreLead}\n` +
+            `📱 *WhatsApp:* ${from}\n` +
+            `📅 *Llegada:* ${formatFecha(checkin)}\n` +
+            `📅 *Salida:* ${formatFecha(checkout)}\n` +
+            `👥 *Personas:* ${num}\n\n` +
+            `Contactar para confirmar disponibilidad y cerrar.`
+          )
+        } else {
+          response = MSG.rangoPrecio(nombreLead, tipoRenta, rango)
+          nextFase = 'confirmar_interes'
+        }
+      }
+
+    } else if (fase === 'confirmar_interes') {
+      if (esRespuestaAfirmativa(textLower)) {
+        const { data: lead } = leadId
+          ? await supabase.from('leads').select('nombre, fecha_checkin, fecha_checkout, num_personas').eq('id', leadId).maybeSingle()
           : { data: null }
         const nombreLead = lead?.nombre || profileName || 'amigo/a'
         response =
           `¡Perfecto, *${nombreLead}*! 🙌 Ya tengo tus datos:\n\n` +
           `📅 *Llegada:* ${formatFecha(lead?.fecha_checkin || '')}\n` +
           `📅 *Salida:* ${formatFecha(lead?.fecha_checkout || '')}\n` +
-          `👥 *Personas:* ${num}\n\n` +
+          `👥 *Personas:* ${lead?.num_personas ?? '-'}\n\n` +
           `Un asesor verificará la disponibilidad y se pondrá en contacto contigo en breve. 😊`
         nextFase = 'esperando_asesor'
         await alertarAdmin(
@@ -774,10 +889,26 @@ export async function POST(request: Request) {
           `📱 *WhatsApp:* ${from}\n` +
           `📅 *Llegada:* ${formatFecha(lead?.fecha_checkin || '')}\n` +
           `📅 *Salida:* ${formatFecha(lead?.fecha_checkout || '')}\n` +
-          `👥 *Personas:* ${num}\n\n` +
-          `Contactar para confirmar disponibilidad y cerrar.`
+          `👥 *Personas:* ${lead?.num_personas ?? '-'}\n\n` +
+          `Confirmó que el rango de precio le interesa. Contactar para confirmar disponibilidad y cerrar.`
         )
+      } else if (esRespuestaNegativa(textLower)) {
+        // Filtro pedido por el negocio: si el rango no le funciona, se marca
+        // como no_interesado y NO se alerta al asesor — el objetivo es que el
+        // asesor solo reciba leads que ya confirmaron que el precio les sirve.
+        if (leadId) await supabase.from('leads').update({ stage: 'no_interesado' }).eq('id', leadId)
+        response = MSG.cierreNoInteresado()
+        nextFase = 'no_interesado'
+      } else {
+        response = MSG.errorConfirmarInteres()
+        nextFase = 'confirmar_interes'
       }
+
+    } else if (fase === 'no_interesado') {
+      // Fase terminal (mismo patrón que 'esperando_asesor'): si el lead vuelve
+      // a escribir después de descartarse por precio, no rompe el flujo.
+      response = `Gracias por tu tiempo 🙏 Si en otro momento buscas algo dentro de este rango, aquí estamos para ayudarte.`
+      nextFase = 'no_interesado'
 
     } else if (fase === 'tipo_loft') {
       const { data: lead } = leadId
