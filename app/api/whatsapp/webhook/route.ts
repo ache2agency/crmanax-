@@ -48,12 +48,21 @@ async function alertarNuevoLead(profileName: string, from: string, primerMensaje
   )
 }
 
-const BOTON_SIGUE_INTERESADO = 'sí, envíame la info'
+// Botones "sí" de los 3 templates de reactivación (A: seguimiento_solicitud_anax,
+// B: retomar_datos_anax, C: retomar_conversacion_anax) — cada uno con su propio texto.
+const BOTONES_SIGUE_INTERESADO = new Set([
+  'sí, envíame la info',
+  'sí, quiero continuar',
+  'sí, contáctenme',
+])
 const BOTON_YA_NO = 'ya no, gracias'
 
-// Toque de botón del template `seguimiento_solicitud_anax` (reactivación
-// manual de leads en esperando_asesor) — llega como message.type === "button",
-// no "text", por eso se maneja aparte de parseIncoming() y antes de su filtro.
+// Toque de botón de cualquiera de los templates de reactivación (A/B/C) —
+// llega como message.type === "button", no "text", por eso se maneja aparte
+// de parseIncoming() y antes de su filtro. No se filtra por `fase` porque cada
+// template se dispara a leads en fases distintas (A: esperando_asesor,
+// B: a medio flujo, C: fase variable) — solo importa la conversación más
+// reciente de ese número.
 async function manejarBotonReactivacion(
   supabase: ReturnType<typeof createServiceRoleClient>,
   payload: unknown
@@ -71,7 +80,6 @@ async function manejarBotonReactivacion(
     .from('whatsapp_conversaciones')
     .select('id, lead_id')
     .eq('whatsapp', from)
-    .eq('fase', 'esperando_asesor')
     .order('ultimo_mensaje_at', { ascending: false })
     .limit(1)
     .maybeSingle()
@@ -95,7 +103,7 @@ async function manejarBotonReactivacion(
   if (botonLower === BOTON_YA_NO) {
     if (conv.lead_id) await supabase.from('leads').update({ stage: 'no_interesado' }).eq('id', conv.lead_id)
     await alertarAdmin(`🔴 *${nombre}* respondió que ya no le interesa (reactivación) — ${from}`)
-  } else if (botonLower === BOTON_SIGUE_INTERESADO) {
+  } else if (BOTONES_SIGUE_INTERESADO.has(botonLower)) {
     await alertarAdmin(`🟢 *${nombre}* confirmó que SIGUE interesado (reactivación) — ${from}. Contactar para dar seguimiento real.`)
   } else {
     await alertarAdmin(`💬 *${nombre}* respondió el botón "${botonTexto}" (reactivación) — ${from}`)
