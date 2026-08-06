@@ -102,6 +102,9 @@ async function manejarBotonReactivacion(
 
   if (botonLower === BOTON_YA_NO) {
     if (conv.lead_id) await supabase.from('leads').update({ stage: 'no_interesado' }).eq('id', conv.lead_id)
+    // Cerrar la conversación (mismo criterio que closeLead() en el Kanban) para que
+    // el cron de seguimiento (10-20h, filtra por estado='abierta') deje de re-contactarlo.
+    await supabase.from('whatsapp_conversaciones').update({ estado: 'cerrada' }).eq('id', conv.id)
     await alertarAdmin(`🔴 *${nombre}* respondió que ya no le interesa (reactivación) — ${from}`)
   } else if (BOTONES_SIGUE_INTERESADO.has(botonLower)) {
     await alertarAdmin(`🟢 *${nombre}* confirmó que SIGUE interesado (reactivación) — ${from}. Contactar para dar seguimiento real.`)
@@ -734,6 +737,7 @@ export async function POST(request: Request) {
     // ── State machine ────────────────────────────────────────────────────────
     let response = ''
     let nextFase = fase
+    let cerrarConversacion = false
 
     // Comando global: reiniciar en cualquier fase
     if (textLower === 'reiniciar') {
@@ -899,6 +903,7 @@ export async function POST(request: Request) {
         if (leadId) await supabase.from('leads').update({ stage: 'no_interesado' }).eq('id', leadId)
         response = MSG.cierreNoInteresado()
         nextFase = 'no_interesado'
+        cerrarConversacion = true
       } else {
         response = MSG.errorConfirmarInteres()
         nextFase = 'confirmar_interes'
@@ -971,8 +976,15 @@ export async function POST(request: Request) {
       }
 
     } else if (fase === 'esperando_asesor') {
-      response = `Ya tengo tus datos ✅ Un asesor te contactará en breve para confirmar disponibilidad. Si tienes alguna otra duda mientras tanto, con gusto te ayudo. 😊`
-      nextFase = 'esperando_asesor'
+      if (esRespuestaNegativa(textLower)) {
+        if (leadId) await supabase.from('leads').update({ stage: 'no_interesado' }).eq('id', leadId)
+        response = `¡Con gusto! Quedamos al pendiente. Si más adelante tienes dudas o quieres retomar, aquí estamos. 😊`
+        nextFase = 'no_interesado'
+        cerrarConversacion = true
+      } else {
+        response = `Ya tengo tus datos ✅ Un asesor te contactará en breve para confirmar disponibilidad. Si tienes alguna otra duda mientras tanto, con gusto te ayudo. 😊`
+        nextFase = 'esperando_asesor'
+      }
 
     } else {
       // Fase desconocida — reiniciar
@@ -987,6 +999,7 @@ export async function POST(request: Request) {
         fase: nextFase,
         ultimo_mensaje_at: new Date().toISOString(),
         seguimiento_enviado: false,
+        ...(cerrarConversacion ? { estado: 'cerrada' } : {}),
       }).eq('id', convId)
       if (updateError) console.error('[webhook] conv update error:', updateError)
 

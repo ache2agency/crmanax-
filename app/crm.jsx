@@ -872,7 +872,7 @@ export default function CRM() {
       } else {
         await supabase
           .from("whatsapp_conversaciones")
-          .update({ ultimo_mensaje_at: now, modo_humano: true, tomado_por: currentUser?.id || null })
+          .update({ ultimo_mensaje_at: now, modo_humano: true, tomado_por: currentUser?.id || null, humano_intervino: true })
           .eq("id", selectedConv.id);
         await logLeadActivity({
           leadId: selectedConv.lead_id,
