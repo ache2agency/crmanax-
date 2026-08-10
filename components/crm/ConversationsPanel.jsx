@@ -444,7 +444,7 @@ export default function ConversationsPanel({
         {/* ── LISTA ── */}
         <div className="wa-list">
           <div className="wa-list-header">
-            <span className="wa-list-title">Chats Windsor</span>
+            <span className="wa-list-title">Chats Anaxágoras</span>
             <span style={{ color: "rgba(255,255,255,0.65)", fontSize: 11 }}>WhatsApp</span>
           </div>
 
