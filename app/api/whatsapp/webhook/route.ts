@@ -420,6 +420,21 @@ const MSG = {
   errorFecha: () =>
     `No pude entender esa fecha 😅\n\nEscríbela así: *DD/MM/YYYY*\nEjemplo: 15/06/2026`,
 
+  errorFechaPregunta: () =>
+    `Con gusto te ayudo con eso 🙂 Para poder seguir necesito tu fecha de llegada — ¿me la compartes así: *DD/MM/YYYY*?`,
+
+  escalarFecha: () =>
+    `Ya te paso con un asesor para que te ayude directamente con eso. En un momento te contactan. 🙌`,
+
+  errorNombre: () =>
+    `Ese no me parece un nombre 😅 ¿Me compartes tu nombre completo?`,
+
+  errorNombrePregunta: () =>
+    `Con gusto te ayudo con eso 🙂 Para darte información más precisa, primero necesito tu nombre completo — ¿me lo compartes?`,
+
+  escalarNombre: () =>
+    `Ya te paso con un asesor para que te ayude directamente con eso. En un momento te contactan. 🙌`,
+
   errorFechaPasada: () =>
     `Esa fecha ya pasó 😅\n\nEscribe una fecha de llegada a partir de hoy.\nEjemplo: 15/06/2026`,
 
@@ -510,7 +525,8 @@ function faqResponse(key: string): string {
 }
 
 function flowReminder(fase: string | null): string {
-  if (!fase || fase === 'saludo' || fase === 'nombre' || fase === 'confirmado' || fase === 'esperando_asesor' || fase === 'no_interesado') return ''
+  if (!fase || fase === 'saludo' || fase === 'confirmado' || fase === 'esperando_asesor' || fase === 'no_interesado') return ''
+  if (fase === 'nombre') return `\n\n¿Me compartes tu nombre completo?`
   if (fase === 'tipo_renta') return `\n\n${MSG.pedirTipoRenta()}`
   if (fase === 'checkin') return `\n\n${MSG.pedirCheckin()}`
   if (fase === 'checkout') return `\n\n${MSG.pedirCheckout()}`
@@ -518,6 +534,35 @@ function flowReminder(fase: string | null): string {
   if (fase === 'tipo_loft') return `\n\n_Elige el tipo de loft respondiendo *1* o *2*._`
   if (fase === 'confirmar_interes') return `\n\n¿Te interesa el rango de precio? Responde *sí* o *no*.`
   return ''
+}
+
+// Preguntas/objeciones fuera de guión durante los pasos de nombre/fecha
+// (ej. "¿se puede rentar anual?"), que no encajan en ninguna categoría de
+// detectFaq(). Sin esto, el bot las trataba como un intento fallido de dar
+// el dato pedido y repetía el mismo error de formato sin fin.
+function pareceInterrogacion(textLower: string): boolean {
+  if (/[?¿]/.test(textLower)) return true
+  return /^(puedo|se puede|podr[ií]a|quiero saber|quisiera saber|me interesa saber|necesito saber|informaci[oó]n|qu[eé]|c[oó]mo|cu[aá]ndo|d[oó]nde|por qu[eé])\b/.test(textLower.trim())
+}
+
+// Si el bot ya le repitió el mismo error una vez en este paso y el lead
+// sigue sin poder cumplir el formato, insistir una tercera vez solo genera
+// el mismo loop que atoró a Horacio Mendoza — mejor escalar a un asesor.
+async function ultimoMensajeFueError(
+  supabase: ReturnType<typeof createServiceRoleClient>,
+  convId: string | undefined,
+  textosError: string[]
+): Promise<boolean> {
+  if (!convId) return false
+  const { data } = await supabase
+    .from('whatsapp_mensajes')
+    .select('contenido')
+    .eq('conversacion_id', convId)
+    .eq('rol', 'bot')
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+  return !!data && textosError.includes(data.contenido)
 }
 
 // ─── Webhook verification (GET) ───────────────────────────────────────────────
@@ -761,7 +806,7 @@ export async function POST(request: Request) {
       }
 
     // FAQ: responde preguntas sin romper el flujo de reserva
-    } else if (fase && fase !== 'nombre' && detectFaq(textLower)) {
+    } else if (fase && detectFaq(textLower)) {
       response = faqResponse(detectFaq(textLower)!) + flowReminder(fase)
       nextFase = fase
 
@@ -784,8 +829,20 @@ export async function POST(request: Request) {
     } else if (fase === 'nombre') {
       const nombre = text.trim()
       if (!esNombreValido(nombre)) {
-        response = `Ese no me parece un nombre 😅 ¿Me compartes tu nombre completo?`
-        nextFase = 'nombre'
+        const yaFalloAntes = await ultimoMensajeFueError(supabase, convId, [MSG.errorNombre(), MSG.errorNombrePregunta()])
+        if (yaFalloAntes) {
+          response = MSG.escalarNombre()
+          nextFase = 'esperando_asesor'
+          await alertarAdmin(
+            `⚠️ *Lead atorado dando su nombre*\n\n📱 *WhatsApp:* ${from}\n💬 *Último mensaje:* "${text}"\n\nNo pudo pasar el paso de nombre en 2 intentos — revisar manualmente.`
+          )
+        } else if (pareceInterrogacion(textLower)) {
+          response = MSG.errorNombrePregunta()
+          nextFase = 'nombre'
+        } else {
+          response = MSG.errorNombre()
+          nextFase = 'nombre'
+        }
       } else {
         if (leadId) await supabase.from('leads').update({ nombre }).eq('id', leadId)
         response = `Mucho gusto, *${nombre}*! 😊\n\n` + MSG.pedirCheckin()
@@ -811,8 +868,20 @@ export async function POST(request: Request) {
     } else if (fase === 'checkin') {
       const fecha = parseDate(text)
       if (!fecha) {
-        response = MSG.errorFecha()
-        nextFase = 'checkin'
+        const yaFalloAntes = await ultimoMensajeFueError(supabase, convId, [MSG.errorFecha(), MSG.errorFechaPregunta()])
+        if (yaFalloAntes) {
+          response = MSG.escalarFecha()
+          nextFase = 'esperando_asesor'
+          await alertarAdmin(
+            `⚠️ *Lead atorado dando su fecha de llegada*\n\n📱 *WhatsApp:* ${from}\n💬 *Último mensaje:* "${text}"\n\nNo pudo pasar el paso de fecha en 2 intentos — revisar manualmente.`
+          )
+        } else if (pareceInterrogacion(textLower)) {
+          response = MSG.errorFechaPregunta()
+          nextFase = 'checkin'
+        } else {
+          response = MSG.errorFecha()
+          nextFase = 'checkin'
+        }
       } else if (esFechaAnteriorAHoy(fecha)) {
         response = MSG.errorFechaPasada()
         nextFase = 'checkin'
