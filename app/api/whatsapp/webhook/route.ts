@@ -744,6 +744,22 @@ export async function POST(request: Request) {
       response = MSG.bienvenida()
       nextFase = 'nombre'
 
+    // Ya se avisó una vez que un asesor la va a contactar — no insistir con
+    // el flujo ni repetir el mensaje enlatado en cada mensaje que mande el
+    // lead mientras espera. Solo se responde si declina explícitamente;
+    // si no, se queda en silencio (se sigue logueando y alertando al admin
+    // más arriba, el bot simplemente no contesta).
+    } else if (fase === 'esperando_asesor') {
+      if (esRespuestaNegativa(textLower)) {
+        if (leadId) await supabase.from('leads').update({ stage: 'no_interesado' }).eq('id', leadId)
+        response = `¡Con gusto! Quedamos al pendiente. Si más adelante tienes dudas o quieres retomar, aquí estamos. 😊`
+        nextFase = 'no_interesado'
+        cerrarConversacion = true
+      } else {
+        response = ''
+        nextFase = 'esperando_asesor'
+      }
+
     // FAQ: responde preguntas sin romper el flujo de reserva
     } else if (fase && fase !== 'nombre' && detectFaq(textLower)) {
       response = faqResponse(detectFaq(textLower)!) + flowReminder(fase)
@@ -973,17 +989,6 @@ export async function POST(request: Request) {
             `El lead confirmó interés. Contactar para coordinar depósito.`
           )
         }
-      }
-
-    } else if (fase === 'esperando_asesor') {
-      if (esRespuestaNegativa(textLower)) {
-        if (leadId) await supabase.from('leads').update({ stage: 'no_interesado' }).eq('id', leadId)
-        response = `¡Con gusto! Quedamos al pendiente. Si más adelante tienes dudas o quieres retomar, aquí estamos. 😊`
-        nextFase = 'no_interesado'
-        cerrarConversacion = true
-      } else {
-        response = `Ya tengo tus datos ✅ Un asesor te contactará en breve para confirmar disponibilidad. Si tienes alguna otra duda mientras tanto, con gusto te ayudo. 😊`
-        nextFase = 'esperando_asesor'
       }
 
     } else {
