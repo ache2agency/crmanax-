@@ -55,7 +55,7 @@ export async function POST(request: Request) {
 
   await supabase
     .from('whatsapp_conversaciones')
-    .update({ ultimo_mensaje_at: now, estado: 'abierta' })
+    .update({ ultimo_mensaje_at: now, estado: 'abierta', modo_humano: true, humano_intervino: true })
     .eq('id', conv.id)
 
   return Response.json({ ok: true, contenido })
