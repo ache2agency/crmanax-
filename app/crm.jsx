@@ -2,6 +2,7 @@
 import { useState, useEffect, useRef } from "react";
 import { createClient } from "@/utils/supabase/client";
 import AgendaPanel from "@/components/crm/AgendaPanel";
+import DisponibilidadPanel from "@/components/crm/DisponibilidadPanel";
 import ConversationsPanel from "@/components/crm/ConversationsPanel";
 import KanbanBoard from "@/components/crm/KanbanBoard";
 import LeadsTable from "@/components/crm/LeadsTable";
@@ -1601,6 +1602,7 @@ export default function CRM() {
             <button className={`nav-btn ${view === "kanban" ? "active" : ""}`} onClick={() => confirmReturnToBotIfNeeded(() => setView("kanban"))}>KANBAN</button>
             <button className={`nav-btn ${view === "lista" ? "active" : ""}`} onClick={() => confirmReturnToBotIfNeeded(() => setView("lista"))}>LISTA</button>
             <button className={`nav-btn ${view === "agenda" ? "active" : ""}`} onClick={() => confirmReturnToBotIfNeeded(() => setView("agenda"))}>AGENDA</button>
+            <button className={`nav-btn ${view === "disponibilidad" ? "active" : ""}`} onClick={() => confirmReturnToBotIfNeeded(() => setView("disponibilidad"))}>DISPONIBILIDAD</button>
             <button
               className={`nav-btn ${view === "convs" ? "active" : ""}`}
               onClick={() => confirmReturnToBotIfNeeded(() => { setView("convs"); fetchWhatsConvs(); setSelectedConv(null); setConvMessages([]); })}
@@ -1641,6 +1643,7 @@ export default function CRM() {
               { label: "KANBAN", v: "kanban", action: () => setView("kanban") },
               { label: "LISTA", v: "lista", action: () => setView("lista") },
               { label: "AGENDA", v: "agenda", action: () => setView("agenda") },
+              { label: "DISPONIBILIDAD", v: "disponibilidad", action: () => setView("disponibilidad") },
               { label: "CONVERSACIONES", v: "convs", action: () => { setView("convs"); fetchWhatsConvs(); setSelectedConv(null); setConvMessages([]); } },
             ].map(item => (
               <button
@@ -1663,9 +1666,9 @@ export default function CRM() {
         )}
       </div>
 
-      <div className={view === "kanban" ? "kanban-wrapper" : ""} style={{ maxWidth: view === "agenda" ? "none" : 1400, margin: "0 auto", padding: view === "agenda" ? "12px 16px" : view === "convs" ? "0" : "24px", flex: 1, minHeight: 0, display: (view === "convs" || view === "agenda") ? "flex" : "block", flexDirection: "column", overflowY: (view === "convs" || view === "agenda") ? "hidden" : "auto" }}>
+      <div className={view === "kanban" ? "kanban-wrapper" : ""} style={{ maxWidth: (view === "agenda" || view === "disponibilidad") ? "none" : 1400, margin: "0 auto", padding: (view === "agenda" || view === "disponibilidad") ? "12px 16px" : view === "convs" ? "0" : "24px", flex: 1, minHeight: 0, display: (view === "convs" || view === "agenda" || view === "disponibilidad") ? "flex" : "block", flexDirection: "column", overflowY: (view === "convs" || view === "agenda" || view === "disponibilidad") ? "hidden" : "auto" }}>
         {/* STATS */}
-        <div style={{ display: (view === "convs" || view === "agenda") ? "none" : "block", marginBottom: 20 }}>
+        <div style={{ display: (view === "convs" || view === "agenda" || view === "disponibilidad") ? "none" : "block", marginBottom: 20 }}>
           {/* Stats compactas */}
           <div className="stat-card-grid" style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginBottom: 10 }}>
             {[
@@ -1709,7 +1712,7 @@ export default function CRM() {
         </div>
 
         {/* FILTROS */}
-        <div style={{ display: (view === "convs" || view === "agenda") ? "none" : "flex", gap: 12, marginBottom: 24, alignItems: "center" }}>
+        <div style={{ display: (view === "convs" || view === "agenda" || view === "disponibilidad") ? "none" : "flex", gap: 12, marginBottom: 24, alignItems: "center" }}>
           <input className="input" style={{ maxWidth: 260 }} placeholder="🔍  Buscar lead..." value={search} onChange={e => setSearch(e.target.value)} />
           {isAdmin && (
             <select className="select" style={{ maxWidth: 200 }} value={filterVendedor} onChange={e => setFilterVendedor(e.target.value)}>
@@ -2264,6 +2267,11 @@ export default function CRM() {
             getCitaStatusStyle={getCitaStatusStyle}
             updateCitaStatus={updateCitaStatus}
           />
+        )}
+
+        {/* DISPONIBILIDAD */}
+        {!loading && view === "disponibilidad" && (
+          <DisponibilidadPanel leads={leads} />
         )}
       </div>
 
