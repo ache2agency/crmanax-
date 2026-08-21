@@ -588,6 +588,9 @@ const MSG = {
   estacionamiento: () =>
     `No contamos con estacionamiento propio, pero hay opciones cerca:\n\n🅿️ Estacionamientos públicos en la zona\n🅿️ Parque Delta (a pasos del edificio)\n\n¿Hay algo más en que te pueda ayudar?`,
 
+  mascotas: () =>
+    `Gracias por consultarnos 😊 Anaxágoras 41 no es pet friendly, ya que nuestras instalaciones no están acondicionadas para recibir mascotas. Lamentamos no poder ofrecerte esta opción.`,
+
   rooftop: () =>
     `*Roof Top Anaxágoras* — Eventos\n\nEspacio semitechado ideal para eventos pequeños, brunchs y reuniones.\n\n👥 Capacidad: hasta 20 personas\n⏰ Horario: 9:00 a.m. – 12:00 a.m.\n💰 Tarifa: $6,000 MXN (7 horas)\n🔒 Depósito: $2,000 MXN (se devuelve al día siguiente)\n\nIncluye: mobiliario, barra con tarja, bocina, proyector y sanitario.\n\n_No se permite equipo de audio externo ni grupos musicales._\n\nPara reservar el Roof Top escríbenos al *+52 55 3481 5126*.`,
 
@@ -604,6 +607,7 @@ const MSG = {
 // ─── FAQ detector ─────────────────────────────────────────────────────────────
 
 function detectFaq(textLower: string): string | null {
+  if (/mascota|pet\s*friendly|petfriendly|perro|perrita|perrito|gato|gatita|gatito/.test(textLower)) return 'mascotas'
   if (/precio|costo|cuánto|cuanto|tarifa|cobran|valen|rate/.test(textLower)) return 'precios'
   if (/ubica|dónde|donde|direcci|mapa|cómo llegar|como llegar/.test(textLower)) return 'ubicacion'
   if (/servicio|incluye|incluy|wifi|internet|luz|agua|gas|limpieza|lavander/.test(textLower)) return 'servicios'
@@ -620,6 +624,7 @@ function faqResponse(key: string): string {
     case 'ubicacion': return MSG.ubicacion()
     case 'servicios': return MSG.servicios()
     case 'estacionamiento': return MSG.estacionamiento()
+    case 'mascotas': return MSG.mascotas()
     case 'rooftop': return MSG.rooftop()
     case 'seguridad': return MSG.seguridad()
     case 'fotos': return MSG.fotos()
