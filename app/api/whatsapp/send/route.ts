@@ -9,7 +9,12 @@ import {
   sendMetaWhatsAppMessage,
 } from '@/lib/whatsapp/provider'
 
-const PATRON_COTIZACION = /\$[\d,]+|MXN|pesos|disponibilidad|disponible|contamos con|tendr[ií]a|dep[oó]sito|garant[ií]a/i
+// Requiere un monto real de dinero (ej. "$12,000" o "12000 pesos") para
+// contar como cotización — palabras sueltas como "disponibilidad" o
+// "garantía" no prueban que se haya dado un precio y antes disparaban
+// el avance de stage con solo mencionarlas (ej. un asesor preguntando
+// "¿tienes disponibilidad para esa fecha?" sin dar ningún precio).
+const PATRON_COTIZACION = /\$[\d,]+|\b\d[\d,]*\s*(mxn|pesos)\b/i
 
 function esMensajeDeCotizacion(body: string): boolean {
   return PATRON_COTIZACION.test(body)
