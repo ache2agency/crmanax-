@@ -48,6 +48,48 @@ async function alertarNuevoLead(profileName: string, from: string, primerMensaje
   )
 }
 
+// Busca un lead existente por whatsapp o crea uno nuevo. `leads.whatsapp`
+// tiene un constraint único (leads_whatsapp_unique) — si dos mensajes del
+// mismo número llegan casi al mismo tiempo, ambos requests pueden ver "no
+// existe" antes de que cualquiera termine de escribir, y el segundo insert
+// choca contra el constraint. En vez de dejar ese request sin lead (lo que
+// deja la conversación huérfana, sin lead_id, y el mensaje nunca aparece en
+// el CRM), reintenta el lookup una vez tras el fallo.
+async function buscarOCrearLead(
+  supabase: Awaited<ReturnType<typeof createServiceRoleClient>>,
+  from: string,
+  profileName: string,
+  primerMensaje: string
+): Promise<string | undefined> {
+  const { data: existingLead } = await supabase
+    .from('leads').select('id').eq('whatsapp', from).maybeSingle()
+  if (existingLead?.id) return existingLead.id as string
+
+  const adminId = await getAdminId(supabase)
+  const { data: newLead, error: leadError } = await supabase
+    .from('leads')
+    .insert([{
+      nombre: profileName || 'Prospecto WhatsApp',
+      whatsapp: from,
+      stage: 'nuevo_contacto',
+      notas: `Lead desde WhatsApp${profileName ? '. Nombre WA: ' + profileName : ''}.`,
+      ...(adminId ? { asignado_a: adminId } : {}),
+    }])
+    .select('id')
+    .maybeSingle()
+
+  if (newLead?.id) {
+    await alertarNuevoLead(profileName, from, primerMensaje)
+    return newLead.id as string
+  }
+
+  if (leadError) console.error('[webhook] lead insert error:', leadError)
+
+  const { data: retryLead } = await supabase
+    .from('leads').select('id').eq('whatsapp', from).maybeSingle()
+  return retryLead?.id as string | undefined
+}
+
 // Botones "sí" de los 3 templates de reactivación (A: seguimiento_solicitud_anax,
 // B: retomar_datos_anax, C: retomar_conversacion_anax) — cada uno con su propio texto.
 const BOTONES_SIGUE_INTERESADO = new Set([
@@ -733,26 +775,7 @@ export async function POST(request: Request) {
 
     // Si la conv existe pero no tiene lead_id, recuperar o crear el lead
     if (conv && !leadId) {
-      const { data: existingLead } = await supabase
-        .from('leads').select('id').eq('whatsapp', from).maybeSingle()
-      if (existingLead?.id) {
-        leadId = existingLead.id
-      } else {
-        const adminId = await getAdminId(supabase)
-        const { data: newLead } = await supabase
-          .from('leads')
-          .insert([{
-            nombre: profileName || 'Prospecto WhatsApp',
-            whatsapp: from,
-            stage: 'nuevo_contacto',
-            notas: `Lead desde WhatsApp${profileName ? '. Nombre WA: ' + profileName : ''}.`,
-            ...(adminId ? { asignado_a: adminId } : {}),
-          }])
-          .select('id')
-          .maybeSingle()
-        leadId = newLead?.id
-        if (leadId) await alertarNuevoLead(profileName, from, text)
-      }
+      leadId = await buscarOCrearLead(supabase, from, profileName, text)
       if (leadId) {
         await supabase.from('whatsapp_conversaciones')
           .update({ lead_id: leadId }).eq('id', convId!)
@@ -761,34 +784,7 @@ export async function POST(request: Request) {
 
     // ── Si no hay conversación, crear lead + conversación ───────────────────
     if (!conv) {
-      const adminId = await getAdminId(supabase)
-
-      // Buscar lead existente por whatsapp
-      const { data: existingLead } = await supabase
-        .from('leads')
-        .select('id')
-        .eq('whatsapp', from)
-        .maybeSingle()
-
-      if (existingLead?.id) {
-        leadId = existingLead.id
-      } else {
-        // Insertar nuevo lead
-        const { data: newLead, error: leadError } = await supabase
-          .from('leads')
-          .insert([{
-            nombre: profileName || 'Prospecto WhatsApp',
-            whatsapp: from,
-            stage: 'nuevo_contacto',
-            notas: `Lead desde WhatsApp${profileName ? '. Nombre WA: ' + profileName : ''}.`,
-            ...(adminId ? { asignado_a: adminId } : {}),
-          }])
-          .select('id')
-          .maybeSingle()
-        if (leadError) console.error('[webhook] lead insert error:', leadError)
-        leadId = newLead?.id
-        if (leadId) await alertarNuevoLead(profileName, from, text)
-      }
+      leadId = await buscarOCrearLead(supabase, from, profileName, text)
 
       // Registrar actividad
       if (leadId) {
