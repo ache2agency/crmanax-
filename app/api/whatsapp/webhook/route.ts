@@ -288,15 +288,76 @@ function formatFecha(fecha: string): string {
   return `${d}/${m}/${y}`
 }
 
+const MESES_ES: Record<string, string> = {
+  enero: '01', febrero: '02', marzo: '03', abril: '04', mayo: '05', junio: '06',
+  julio: '07', agosto: '08', septiembre: '09', setiembre: '09', octubre: '10',
+  noviembre: '11', diciembre: '12',
+}
+
+function sumarDiasISO(fechaISO: string, dias: number): string {
+  const d = new Date(`${fechaISO}T00:00:00Z`)
+  d.setUTCDate(d.getUTCDate() + dias)
+  return d.toISOString().slice(0, 10)
+}
+
+// Valida que year/month/day formen una fecha real de calendario (rechaza
+// cosas como "31 de febrero", que Date() de otro modo rueda a marzo en vez
+// de marcar como inválida).
+function fechaCalendarioValida(year: string, month: string, day: string): boolean {
+  const y = Number(year)
+  const m = Number(month)
+  const d = Number(day)
+  const dt = new Date(Date.UTC(y, m - 1, d))
+  return dt.getUTCFullYear() === y && dt.getUTCMonth() === m - 1 && dt.getUTCDate() === d
+}
+
 function parseDate(text: string): string | null {
+  const raw = text.trim()
+  const lower = raw.toLowerCase()
+  const hoy = new Date().toISOString().slice(0, 10)
+
+  // "hoy"/"mañana"/"pasado mañana" (con o sin tilde, típico en WhatsApp).
+  // Si el mensaje menciona más de una de estas palabras a la vez (ej. "hoy
+  // mañana lo antes posible"), es ambiguo — no adivinar, dejar que el flujo
+  // normal de reintentos/escalamiento a un asesor se encargue.
+  let sinPasadoManana = lower
+  const tienePasadoManana = /\bpasado\s+ma(?:ñ|n)ana\b/.test(lower)
+  if (tienePasadoManana) sinPasadoManana = lower.replace(/\bpasado\s+ma(?:ñ|n)ana\b/g, '')
+  const tieneHoy = /\bhoy\b/.test(sinPasadoManana)
+  const tieneManana = /\bma(?:ñ|n)ana\b/.test(sinPasadoManana)
+  const señales = [tienePasadoManana, tieneHoy, tieneManana].filter(Boolean).length
+  if (señales === 1) {
+    if (tienePasadoManana) return sumarDiasISO(hoy, 2)
+    if (tieneManana) return sumarDiasISO(hoy, 1)
+    if (tieneHoy) return hoy
+  }
+
+  // Fecha en español: "15 de septiembre" o "15 de septiembre de 2026"
+  const matchEs = lower.match(/\b(\d{1,2})\s+de\s+([a-zñ]+)(?:\s+(?:de\s+)?(\d{4}))?\b/)
+  if (matchEs) {
+    const mes = MESES_ES[matchEs[2]]
+    if (mes) {
+      const day = matchEs[1].padStart(2, '0')
+      let year = matchEs[3] || hoy.slice(0, 4)
+      if (fechaCalendarioValida(year, mes, day)) {
+        let fecha = `${year}-${mes}-${day}`
+        // Sin año explícito y ya pasó este año: asumir el próximo
+        if (!matchEs[3] && fecha < hoy) {
+          year = String(Number(year) + 1)
+          fecha = `${year}-${mes}-${day}`
+        }
+        return fecha
+      }
+    }
+  }
+
   // Accepts DD/MM/YYYY or DD-MM-YYYY or DD/MM/YY
-  const m = text.trim().match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/)
+  const m = raw.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/)
   if (!m) return null
   const day = m[1].padStart(2, '0')
   const month = m[2].padStart(2, '0')
   const year = m[3].length === 2 ? `20${m[3]}` : m[3]
-  const d = new Date(`${year}-${month}-${day}`)
-  if (isNaN(d.getTime())) return null
+  if (!fechaCalendarioValida(year, month, day)) return null
   return `${year}-${month}-${day}`
 }
 
