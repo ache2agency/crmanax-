@@ -57,7 +57,7 @@ const getInfoTemplateForLead = (lead) => {
 export default function CRM() {
   const [leads, setLeads] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [view, setView] = useState("kanban");
+  const [view, setView] = useState("convs");
   const [selectedLead, setSelectedLead] = useState(null);
   const [showForm, setShowForm] = useState(false);
   const [showCitaForm, setShowCitaForm] = useState(false);
@@ -102,6 +102,7 @@ export default function CRM() {
   const [editingDoc, setEditingDoc] = useState(null);
   const [editTexto, setEditTexto] = useState("");
   const [whatsConvs, setWhatsConvs] = useState([]);
+  const [convsLoading, setConvsLoading] = useState(true);
   const [selectedConv, setSelectedConv] = useState(null);
   const [convMessages, setConvMessages] = useState([]);
   const [convSearch, setConvSearch] = useState("");
@@ -412,6 +413,12 @@ export default function CRM() {
       activarNotificaciones(user.id);
     }
 
+    // Conversaciones y lofts no dependen del perfil/rol — se piden de inmediato
+    // para que la vista de Conversaciones (la que se ve al abrir el CRM) cargue
+    // sin esperar la cadena de consultas de perfil/vendedores.
+    fetchWhatsConvs();
+    fetchLofts();
+
     // Cargar o crear perfil
     let { data: profile } = await supabase.from("profiles").select("*").eq("id", user.id).single();
     if (!profile) {
@@ -431,8 +438,6 @@ export default function CRM() {
 
     fetchLeads(user.id, profile?.rol === "admin");
     fetchCitas(user.id, profile?.rol === "admin");
-    fetchWhatsConvs();
-    fetchLofts();
   };
 
   const fetchLofts = async () => {
@@ -509,6 +514,7 @@ export default function CRM() {
   };
 
   const fetchWhatsConvs = async () => {
+    setConvsLoading(true);
     let { data, error } = await supabase
       .from("whatsapp_conversaciones")
       .select("id, whatsapp, lead_id, estado, ultimo_mensaje_at, modo_humano, tomado_por, fase, visto_at")
@@ -520,11 +526,13 @@ export default function CRM() {
         .order("ultimo_mensaje_at", { ascending: false });
       if (fallback.error) {
         showToast("Error cargando conversaciones de WhatsApp", "error");
+        setConvsLoading(false);
         return;
       }
       data = fallback.data;
     }
     setWhatsConvs(data || []);
+    setConvsLoading(false);
   };
 
   const fetchConvMessages = async (convId) => {
@@ -1740,7 +1748,7 @@ export default function CRM() {
           </div>
         </div>
 
-        {loading && <div className="loading">Cargando leads...</div>}
+        {loading && view !== "convs" && <div className="loading">Cargando leads...</div>}
 
         {/* KANBAN */}
         {!loading && view === "kanban" && (
@@ -2222,6 +2230,7 @@ export default function CRM() {
         {view === "convs" && (
           <ConversationsPanel
             filteredWhatsConvs={filteredWhatsConvs}
+            convsLoading={convsLoading}
             convSearch={convSearch}
             setConvSearch={setConvSearch}
             convModeFilter={convModeFilter}
