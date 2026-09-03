@@ -303,7 +303,15 @@ export default function ConversationsPanel({
   }, [selectedConv?.id]);
 
   const handleSelectConv = async (c) => {
-    if (c.id === selectedConv?.id) return;
+    if (c.id === selectedConv?.id) {
+      // El botón de regresar (mobile) solo cambia mobileView a "list" sin
+      // limpiar selectedConv — sin este caso, tocar de nuevo la misma
+      // conversación no hacía nada porque el guard de arriba cortaba antes
+      // de llegar a setMobileView("chat").
+      setMobileView("chat");
+      fetchConvMessages(c.id);
+      return;
+    }
     setShowInfoCards(false);
     await confirmReturnToBotIfNeeded(async () => {
       setSelectedConv(c);

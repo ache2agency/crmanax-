@@ -1692,7 +1692,7 @@ export default function CRM() {
           .lab-chat-panel { order: 1; min-height: 420px !important; }
           .lab-state-compact { display: flex; flex-wrap: wrap; gap: 8px 16px; }
           .lab-state-compact div { font-size: 11px; }
-          .kanban-wrapper { overflow-x: auto !important; -webkit-overflow-scrolling: touch; padding-bottom: 16px; padding-left: 8px !important; padding-right: 8px !important; max-width: 100vw !important; }
+          .kanban-wrapper { overflow-x: auto !important; -webkit-overflow-scrolling: touch; overscroll-behavior-x: contain; padding-bottom: 16px; padding-left: 8px !important; padding-right: 8px !important; max-width: 100vw !important; }
           .kanban-wrapper > * { min-width: max-content; }
         }
       `}</style>
@@ -1773,7 +1773,7 @@ export default function CRM() {
         )}
       </div>
 
-      <div className={view === "kanban" ? "kanban-wrapper" : ""} style={{ maxWidth: view === "agenda" ? "none" : 1400, margin: "0 auto", padding: view === "agenda" ? "12px 16px" : view === "convs" ? "0" : "24px", flex: 1, minHeight: 0, display: (view === "convs" || view === "agenda") ? "flex" : "block", flexDirection: "column", overflowY: (view === "convs" || view === "agenda") ? "hidden" : "auto" }}>
+      <div className={view === "kanban" ? "kanban-wrapper" : ""} style={{ maxWidth: view === "agenda" ? "none" : 1400, margin: "0 auto", padding: view === "agenda" ? "12px 16px" : view === "convs" ? "0" : "24px", flex: 1, minHeight: 0, display: (view === "convs" || view === "agenda") ? "flex" : "block", flexDirection: "column", overflowY: (view === "convs" || view === "agenda") ? "hidden" : "auto", overscrollBehaviorX: "contain" }}>
         {/* STATS */}
         <div style={{ display: (view === "convs" || view === "agenda") ? "none" : "block", marginBottom: 20 }}>
           {/* Stats compactas */}
