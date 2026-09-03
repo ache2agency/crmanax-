@@ -195,6 +195,17 @@ function isConvUnread(c) {
   return new Date(c.ultimo_mensaje_at) > new Date(c.visto_at);
 }
 
+// Tiempo restante antes de que cierre la ventana de servicio de 24h de
+// WhatsApp (Meta), contado desde el último mensaje del LEAD.
+function tiempoRestanteVentana(fechaStr) {
+  if (!fechaStr) return null;
+  const cierraEn = new Date(fechaStr).getTime() + 24 * 60 * 60 * 1000 - Date.now();
+  if (cierraEn <= 0) return null;
+  const horas = Math.floor(cierraEn / (1000 * 60 * 60));
+  const minutos = Math.floor((cierraEn % (1000 * 60 * 60)) / (1000 * 60));
+  return horas > 0 ? `${horas}h ${minutos}min` : `${minutos}min`;
+}
+
 function dayKeyMx(date) {
   return date.toLocaleDateString("en-CA", { timeZone: "America/Mexico_City" });
 }
@@ -260,6 +271,7 @@ export default function ConversationsPanel({
   moveStage,
   STAGES,
   normalizeStage,
+  ultimoUsuarioAtPorConv,
 }) {
   const [mobileView, setMobileView] = useState("list");
   const [showInfoCards, setShowInfoCards] = useState(false);
@@ -355,6 +367,7 @@ export default function ConversationsPanel({
         .wa-item.unread .wa-item-preview { color: #111b21; font-weight: 600; }
         .wa-item.unread .wa-item-time { color: #25D366; font-weight: 700; }
         .wa-unread-dot { width: 10px; height: 10px; border-radius: 50%; background: #25D366; flex-shrink: 0; }
+        .wa-ventana-badge { font-size: 9px; border-radius: 999px; padding: 1px 6px; font-weight: 600; flex-shrink: 0; white-space: nowrap; background: #dcfce7; color: #15803d; }
 
         /* CHAT */
         .wa-chat { flex: 1; display: flex; flex-direction: column; background: ${WA_BG}; position: relative; min-height: 0; overflow: hidden; }
@@ -488,6 +501,7 @@ export default function ConversationsPanel({
                 const owner = vendedores.find((v) => v.id === c.tomado_por);
                 const time = formatListTime(c.ultimo_mensaje_at);
                 const unread = isConvUnread(c);
+                const restanteVentana = tiempoRestanteVentana(ultimoUsuarioAtPorConv?.[c.id]);
                 return (
                   <div
                     key={c.id}
@@ -508,6 +522,14 @@ export default function ConversationsPanel({
                           {getPhaseLabel(c.fase)}
                         </span>
                         {unread && <span className="wa-unread-dot" title="No leído" />}
+                        {restanteVentana && (
+                          <span
+                            className="wa-ventana-badge"
+                            title="Tiempo restante antes de que cierre la ventana de 24h de WhatsApp"
+                          >
+                            ⏳ {restanteVentana}
+                          </span>
+                        )}
                       </div>
                       {owner && (
                         <div style={{ fontSize: 10, color: "#8696a0", marginTop: 1 }}>{owner.nombre || owner.email}</div>
