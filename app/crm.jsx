@@ -103,6 +103,7 @@ export default function CRM() {
   const [editTexto, setEditTexto] = useState("");
   const [whatsConvs, setWhatsConvs] = useState([]);
   const [convsLoading, setConvsLoading] = useState(true);
+  const [ultimoUsuarioAtPorConv, setUltimoUsuarioAtPorConv] = useState({});
   const [selectedConv, setSelectedConv] = useState(null);
   const [convMessages, setConvMessages] = useState([]);
   const [convSearch, setConvSearch] = useState("");
@@ -541,6 +542,42 @@ export default function CRM() {
     }
     setWhatsConvs(data || []);
     setConvsLoading(false);
+    fetchUltimosUsuarioMensajes(data || []);
+  };
+
+  // Se usa para la ventana de servicio de 24h de WhatsApp, que corre desde el
+  // último mensaje del LEAD (rol "usuario") — no desde `ultimo_mensaje_at`,
+  // que también se actualiza cuando responde el bot o el asesor y por lo tanto
+  // no refleja cuándo cierra la ventana real de Meta. Para no consultar
+  // whatsapp_mensajes de todas las conversaciones, solo se pide para las que
+  // están dentro de las últimas 24h (las únicas donde la ventana puede seguir
+  // abierta) — el resto ya está garantizado fuera de ventana.
+  const fetchUltimosUsuarioMensajes = async (convs, { merge = false } = {}) => {
+    const ahora = Date.now();
+    const convIds = convs
+      .filter((c) => c.ultimo_mensaje_at && (ahora - new Date(c.ultimo_mensaje_at).getTime()) < 24 * 60 * 60 * 1000)
+      .map((c) => c.id);
+    if (convIds.length === 0) {
+      if (!merge) setUltimoUsuarioAtPorConv({});
+      return;
+    }
+    const { data: msgs, error } = await supabase
+      .from("whatsapp_mensajes")
+      .select("conversacion_id, created_at")
+      .in("conversacion_id", convIds)
+      .eq("rol", "usuario")
+      .order("created_at", { ascending: false });
+    const mapa = {};
+    if (!error) {
+      for (const m of msgs || []) {
+        if (!mapa[m.conversacion_id]) mapa[m.conversacion_id] = m.created_at;
+      }
+    }
+    // El polling de la lista (merge: true) solo trae las conversaciones más
+    // recientes — reemplazar el mapa completo borraría el estado de
+    // conversaciones viejas que quedaron fuera de esa muestra.
+    if (merge) setUltimoUsuarioAtPorConv((prev) => ({ ...prev, ...mapa }));
+    else setUltimoUsuarioAtPorConv(mapa);
   };
 
   // Auto-refresh de TODA la lista de conversaciones (no solo la abierta) mientras
@@ -582,6 +619,7 @@ export default function CRM() {
         if (!huboCambios) return prev;
         return Array.from(byId.values()).sort((a, b) => new Date(b.ultimo_mensaje_at) - new Date(a.ultimo_mensaje_at));
       });
+      if (huboCambios) fetchUltimosUsuarioMensajes(data, { merge: true });
     } finally {
       whatsConvsPollingRef.current = false;
     }
@@ -2328,6 +2366,7 @@ export default function CRM() {
             moveStage={moveStage}
             STAGES={STAGES}
             normalizeStage={normalizeStage}
+            ultimoUsuarioAtPorConv={ultimoUsuarioAtPorConv}
           />
         )}
 
