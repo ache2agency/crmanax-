@@ -226,6 +226,7 @@ function formatListTime(dateStr) {
 
 export default function ConversationsPanel({
   filteredWhatsConvs,
+  convsLoading,
   convSearch,
   setConvSearch,
   convModeFilter,
@@ -473,7 +474,9 @@ export default function ConversationsPanel({
 
           <div className="wa-list-items">
             {filteredWhatsConvs.length === 0 ? (
-              <div style={{ padding: 24, textAlign: "center", color: "#8696a0", fontSize: 13 }}>Sin conversaciones</div>
+              <div style={{ padding: 24, textAlign: "center", color: "#8696a0", fontSize: 13 }}>
+                {convsLoading ? "Cargando conversaciones..." : "Sin conversaciones"}
+              </div>
             ) : (
               filteredWhatsConvs.map((c) => {
                 const name = getDisplayName(c);
