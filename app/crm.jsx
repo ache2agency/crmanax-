@@ -119,6 +119,7 @@ export default function CRM() {
   const [agentMessage, setAgentMessage] = useState("");
   const [sendingAgent, setSendingAgent] = useState(false);
   const sendingAgentRef = useRef(false);
+  const whatsConvsPollingRef = useRef(false);
   const [sendingReactivacion, setSendingReactivacion] = useState(false);
   const [sendingInfoLeadId, setSendingInfoLeadId] = useState(null);
   const [leadInfoDraft, setLeadInfoDraft] = useState("");
@@ -542,18 +543,87 @@ export default function CRM() {
     setConvsLoading(false);
   };
 
-  const fetchConvMessages = async (convId) => {
-    setConvMessages([]);
+  // Auto-refresh de TODA la lista de conversaciones (no solo la abierta) mientras
+  // el asesor está en esa sección — sin esto, para ver un mensaje nuevo de OTRO
+  // lead distinto al que tiene abierto hay que salir de Conversaciones y volver
+  // a entrar. No reemplaza whatsConvs completo ni toca ningún estado de texto
+  // que el asesor esté escribiendo: solo trae las 100 conversaciones más
+  // recientes (barato, indexado por ultimo_mensaje_at) y actualiza/reordena esas
+  // dentro del arreglo existente — si nada cambió, ni siquiera dispara un
+  // re-render (misma referencia de arreglo).
+  const pollWhatsConvsRecientes = async () => {
+    if (whatsConvsPollingRef.current) return;
+    whatsConvsPollingRef.current = true;
+    try {
+      const { data, error } = await supabase
+        .from("whatsapp_conversaciones")
+        .select("id, whatsapp, lead_id, estado, ultimo_mensaje_at, modo_humano, tomado_por, fase, visto_at")
+        .order("ultimo_mensaje_at", { ascending: false })
+        .limit(100);
+      if (error || !data) return;
+      let huboCambios = false;
+      setWhatsConvs((prev) => {
+        const byId = new Map(prev.map((c) => [c.id, c]));
+        for (const fresh of data) {
+          const old = byId.get(fresh.id);
+          if (
+            !old ||
+            old.ultimo_mensaje_at !== fresh.ultimo_mensaje_at ||
+            old.fase !== fresh.fase ||
+            old.modo_humano !== fresh.modo_humano ||
+            old.visto_at !== fresh.visto_at ||
+            old.estado !== fresh.estado ||
+            old.tomado_por !== fresh.tomado_por
+          ) {
+            byId.set(fresh.id, { ...old, ...fresh });
+            huboCambios = true;
+          }
+        }
+        if (!huboCambios) return prev;
+        return Array.from(byId.values()).sort((a, b) => new Date(b.ultimo_mensaje_at) - new Date(a.ultimo_mensaje_at));
+      });
+    } finally {
+      whatsConvsPollingRef.current = false;
+    }
+  };
+
+  // Sin chequeo de document.visibilityState a propósito: en el PWA de iPhone
+  // (agregado a pantalla de inicio) ese valor se reporta mal como "no visible"
+  // aunque la app esté en primer plano, así que el check bloquearía el refresh
+  // por completo — mismo problema que se dio en windsorcrm.
+  useEffect(() => {
+    if (view !== "convs") return;
+    const interval = setInterval(() => {
+      pollWhatsConvsRecientes();
+    }, 10000);
+    return () => clearInterval(interval);
+  }, [view]);
+
+  const fetchConvMessages = async (convId, { silent = false } = {}) => {
+    if (!silent) setConvMessages([]);
     const { data, error } = await supabase
       .from("whatsapp_mensajes")
       .select("id, rol, contenido, created_at")
       .eq("conversacion_id", convId)
       .order("created_at", { ascending: true });
     if (error) {
-      showToast("Error cargando mensajes de WhatsApp", "error");
-    } else {
-      setConvMessages(data || []);
+      if (!silent) showToast("Error cargando mensajes de WhatsApp", "error");
+      return;
     }
+    const next = data || [];
+    // En refrescos silenciosos (polling) evitamos cambiar la referencia si el
+    // contenido es igual, para no disparar el auto-scroll ni el re-render del
+    // chat mientras el asesor está leyendo o escribiendo una respuesta.
+    setConvMessages((prev) => {
+      if (
+        silent &&
+        prev.length === next.length &&
+        prev[prev.length - 1]?.id === next[next.length - 1]?.id
+      ) {
+        return prev;
+      }
+      return next;
+    });
   };
 
   const loadWhatsappFlow = async () => {

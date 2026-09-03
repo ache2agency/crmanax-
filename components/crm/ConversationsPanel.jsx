@@ -272,6 +272,23 @@ export default function ConversationsPanel({
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [convMessages]);
 
+  const fetchConvMessagesRef = useRef(fetchConvMessages);
+  useEffect(() => {
+    fetchConvMessagesRef.current = fetchConvMessages;
+  }, [fetchConvMessages]);
+
+  // Sin chequeo de document.visibilityState a propósito: en el PWA de iPhone
+  // ese valor se reporta mal como "no visible" aunque la app esté en primer
+  // plano, así que el check bloquearía el refresh por completo.
+  useEffect(() => {
+    if (!selectedConv?.id) return;
+    const convId = selectedConv.id;
+    const interval = setInterval(() => {
+      fetchConvMessagesRef.current(convId, { silent: true });
+    }, 8000);
+    return () => clearInterval(interval);
+  }, [selectedConv?.id]);
+
   const handleSelectConv = async (c) => {
     if (c.id === selectedConv?.id) return;
     setShowInfoCards(false);
