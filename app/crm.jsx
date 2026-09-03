@@ -880,19 +880,6 @@ export default function CRM() {
     setWhatsConvs((prev) => prev.map((c) => (c.id === conv.id ? { ...c, visto_at } : c)));
   };
 
-  const closeLead = async (leadId, stage, motivo) => {
-    if (!leadId) return;
-    const { error } = await supabase.from("leads").update({ stage }).eq("id", leadId);
-    if (error) { showToast("Error cerrando lead", "error"); return; }
-    await logLeadActivity({ leadId, eventType: "stage_changed", title: stage === "rentado" ? "Departamento rentado" : "Lead no interesado", detail: motivo || "" });
-    // Cerrar conversación si hay una abierta
-    if (selectedConv) {
-      await supabase.from("whatsapp_conversaciones").update({ estado: "cerrada", fase: stage === "rentado" ? "cerrado" : "perdido" }).eq("id", selectedConv.id);
-    }
-    setLeads(prev => prev.map(l => l.id === leadId ? { ...l, stage } : l));
-    showToast(stage === "rentado" ? "Departamento rentado ✓" : "Lead marcado como no interesado");
-  };
-
   /** Si estamos en una conv en modo humano y el usuario va a salir, pide confirmar. Aceptar = pasar a BOT y ejecutar callback; Cancelar = no hacer nada. */
   const confirmReturnToBotIfNeeded = async (thenDo) => {
     if (view !== "convs" || !selectedConv?.modo_humano) {
@@ -2338,7 +2325,9 @@ export default function CRM() {
             sendingAgent={sendingAgent}
             sendReactivacion={sendReactivacion}
             sendingReactivacion={sendingReactivacion}
-            closeLead={closeLead}
+            moveStage={moveStage}
+            STAGES={STAGES}
+            normalizeStage={normalizeStage}
           />
         )}
 
