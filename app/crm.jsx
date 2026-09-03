@@ -293,6 +293,13 @@ export default function CRM() {
 
   useEffect(() => {
     loadUser();
+    // Registrar el service worker de una vez, sin depender de si el usuario ya
+    // dio permiso de notificaciones — Chrome/Android exige un SW controlando
+    // el sitio para ofrecer "Instalar aplicación", y antes solo se registraba
+    // dentro del flujo de notificaciones push.
+    if (typeof window !== "undefined" && "serviceWorker" in navigator) {
+      navigator.serviceWorker.register("/sw.js").catch(() => {});
+    }
   }, []);
 
   useEffect(() => {
