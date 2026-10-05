@@ -5,6 +5,21 @@ import {
   sendMetaWhatsAppMessage,
 } from '@/lib/whatsapp/provider'
 import { enviarPushATodos } from '@/lib/push'
+import { after } from 'next/server'
+import {
+  FASES_SIN_SEGUIMIENTO,
+  clasificarSinFecha,
+  debeRetomarConAsesor,
+  decidirFechas,
+  extraerFechas,
+  extraerNombre,
+  formatFecha,
+  hoyISO,
+  pareceInterrogacion,
+  sumarDiasISO,
+  type Duracion,
+} from '@/lib/whatsapp/bot-parsers'
+import { barridoSeguimientosOportunista } from '@/lib/whatsapp/seguimiento'
 
 const ADMIN_WHATSAPP_NUMBERS = (process.env.ALERT_WHATSAPP_NUMBER || '+525534815126,+527471028306')
   .split(',')
@@ -286,127 +301,17 @@ function parseLoft(text: string, tipo: string, personas: number): string | null 
   return null
 }
 
-const PALABRAS_NO_NOMBRE = [
-  'hola', 'gracias', 'buenas', 'buenos', 'tardes', 'noches', 'dias', 'dia',
-  'informacion', 'info', 'precio', 'precios', 'costo', 'costos', 'cuanto',
-  'quiero', 'necesito', 'renta', 'loft', 'lofts', 'disponibilidad', 'ayuda',
-  'porfavor', 'favor', 'saludos', 'oferta', 'ofertas', 'departamento',
-]
-
-function normalizar(text: string): string {
-  return text.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
-}
-
-function esNombreValido(text: string): boolean {
-  const t = text.trim()
-  if (!t || t.length > 40) return false
-  if (/[?¿]/.test(t)) return false
-  if (/\d/.test(t)) return false
-  if (!/[a-záéíóúñ]/i.test(t)) return false
-  const palabras = t.split(/\s+/).filter(Boolean)
-  if (palabras.length === 0 || palabras.length > 4) return false
-  if (palabras.map(normalizar).some(p => PALABRAS_NO_NOMBRE.includes(p))) return false
-  return true
-}
-
 // Anuncios "click-to-WhatsApp" de Meta prellenan un mensaje tipo:
 // "Hola, vi su anuncio en Facebook. Te comparto la información solicitada: Juan Pérez, 31 julio, 2 personas"
 // Si el lead ya escribió su nombre ahí, lo aprovechamos en vez de volver a pedirlo.
 function extraerNombreDeAnuncio(text: string): string | null {
   const m = text.match(/solicitada:\s*(.+)/i)
   if (!m) return null
-  const candidato = m[1].split(',')[0].trim()
-  return esNombreValido(candidato) ? candidato : null
+  return extraerNombre(m[1].split(',')[0])
 }
 
 function esDespedida(textLower: string): boolean {
-  return /gracias.*(despu[eé]s|luego|m[aá]s tarde|con calma)|me comunico|te escribo (despu[eé]s|luego|m[aá]s tarde)|hablamos (despu[eé]s|luego)|nos vemos/.test(textLower)
-}
-
-function formatFecha(fecha: string): string {
-  if (!fecha) return '-'
-  const [y, m, d] = fecha.split('-')
-  if (!y || !m || !d) return '-'
-  return `${d}/${m}/${y}`
-}
-
-const MESES_ES: Record<string, string> = {
-  enero: '01', febrero: '02', marzo: '03', abril: '04', mayo: '05', junio: '06',
-  julio: '07', agosto: '08', septiembre: '09', setiembre: '09', octubre: '10',
-  noviembre: '11', diciembre: '12',
-}
-
-function sumarDiasISO(fechaISO: string, dias: number): string {
-  const d = new Date(`${fechaISO}T00:00:00Z`)
-  d.setUTCDate(d.getUTCDate() + dias)
-  return d.toISOString().slice(0, 10)
-}
-
-// Valida que year/month/day formen una fecha real de calendario (rechaza
-// cosas como "31 de febrero", que Date() de otro modo rueda a marzo en vez
-// de marcar como inválida).
-function fechaCalendarioValida(year: string, month: string, day: string): boolean {
-  const y = Number(year)
-  const m = Number(month)
-  const d = Number(day)
-  const dt = new Date(Date.UTC(y, m - 1, d))
-  return dt.getUTCFullYear() === y && dt.getUTCMonth() === m - 1 && dt.getUTCDate() === d
-}
-
-function parseDate(text: string): string | null {
-  const raw = text.trim()
-  const lower = raw.toLowerCase()
-  const hoy = new Date().toISOString().slice(0, 10)
-
-  // "hoy"/"mañana"/"pasado mañana" (con o sin tilde, típico en WhatsApp).
-  // Si el mensaje menciona más de una de estas palabras a la vez (ej. "hoy
-  // mañana lo antes posible"), es ambiguo — no adivinar, dejar que el flujo
-  // normal de reintentos/escalamiento a un asesor se encargue.
-  let sinPasadoManana = lower
-  const tienePasadoManana = /\bpasado\s+ma(?:ñ|n)ana\b/.test(lower)
-  if (tienePasadoManana) sinPasadoManana = lower.replace(/\bpasado\s+ma(?:ñ|n)ana\b/g, '')
-  const tieneHoy = /\bhoy\b/.test(sinPasadoManana)
-  const tieneManana = /\bma(?:ñ|n)ana\b/.test(sinPasadoManana)
-  const señales = [tienePasadoManana, tieneHoy, tieneManana].filter(Boolean).length
-  if (señales === 1) {
-    if (tienePasadoManana) return sumarDiasISO(hoy, 2)
-    if (tieneManana) return sumarDiasISO(hoy, 1)
-    if (tieneHoy) return hoy
-  }
-
-  // Fecha en español: "15 de septiembre" o "15 de septiembre de 2026"
-  const matchEs = lower.match(/\b(\d{1,2})\s+de\s+([a-zñ]+)(?:\s+(?:de\s+)?(\d{4}))?\b/)
-  if (matchEs) {
-    const mes = MESES_ES[matchEs[2]]
-    if (mes) {
-      const day = matchEs[1].padStart(2, '0')
-      let year = matchEs[3] || hoy.slice(0, 4)
-      if (fechaCalendarioValida(year, mes, day)) {
-        let fecha = `${year}-${mes}-${day}`
-        // Sin año explícito y ya pasó este año: asumir el próximo
-        if (!matchEs[3] && fecha < hoy) {
-          year = String(Number(year) + 1)
-          fecha = `${year}-${mes}-${day}`
-        }
-        return fecha
-      }
-    }
-  }
-
-  // Accepts DD/MM/YYYY or DD-MM-YYYY or DD/MM/YY
-  const m = raw.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/)
-  if (!m) return null
-  const day = m[1].padStart(2, '0')
-  const month = m[2].padStart(2, '0')
-  const year = m[3].length === 2 ? `20${m[3]}` : m[3]
-  if (!fechaCalendarioValida(year, month, day)) return null
-  return `${year}-${month}-${day}`
-}
-
-// Compara strings 'YYYY-MM-DD' — funciona porque ese formato ordena igual lexicográfica y cronológicamente
-function esFechaAnteriorAHoy(fecha: string): boolean {
-  const hoy = new Date().toISOString().slice(0, 10)
-  return fecha < hoy
+  return /gracias.*(despu[eé]s|luego|m[aá]s tarde|con calma)|me comunico|te escribo (despu[eé]s|luego|m[aá]s tarde)|hablamos (despu[eé]s|luego)|nos vemos|^\s*(adi[oó]s|bye|hasta luego)\b/.test(textLower)
 }
 
 async function getAdminId(
@@ -498,6 +403,28 @@ function parseIncoming(payload: unknown): IncomingWhatsAppMessage | null {
 
 // ─── Bot messages ─────────────────────────────────────────────────────────────
 
+// Ejemplo de fecha siempre en el futuro: con el ejemplo fijo "15/06/2026" hubo
+// leads que lo copiaron tal cual y el bot les contestó "Esa fecha ya pasó".
+function ejemploFecha(diasDesdeHoy: number): string {
+  return formatFecha(sumarDiasISO(hoyISO(), diasDesdeHoy))
+}
+
+// Prefijos de todas las respuestas de "no entendí la fecha" (llegada o
+// salida). Si el último mensaje del bot empieza con alguno, el lead ya falló
+// una vez en este paso y el siguiente fallo se escala a un asesor.
+const PREFIJOS_ERROR_FECHA = [
+  'No pude entender esa fecha',
+  'Con gusto te ayudo con eso 🙂 Para poder seguir necesito tu fecha',
+  'Con gusto 🙂 Cuando la tengas',
+  'Esa fecha ya pasó',
+  'La fecha de salida debe ser',
+]
+
+// La duración que el lead dio antes de su llegada ("me quiero quedar un mes")
+// se guarda dentro del propio mensaje del bot, así no hace falta una columna
+// nueva: al recibir la llegada se lee del último mensaje del bot.
+const PREFIJO_DURACION = 'Perfecto, una estancia de *'
+
 const MSG = {
   bienvenida: () =>
     `¡Hola! 👋 Con gusto te comparto toda la información sobre nuestros lofts en *Anaxágoras 41*. Para darte una atención más personalizada, ¿me puedes decir tu nombre?`,
@@ -509,10 +436,10 @@ const MSG = {
     `¿Qué tipo de renta te interesa?\n\n1️⃣ *Por noche*\n2️⃣ *Por mes*`,
 
   pedirCheckin: () =>
-    `¿Cuál es tu fecha de llegada?\n\nEscríbela así: *DD/MM/YYYY*\nEjemplo: 15/06/2026`,
+    `¿Cuál es tu fecha de llegada?\n\nEscríbela así: *DD/MM/YYYY*\nEjemplo: ${ejemploFecha(14)}\n\n_Si ya sabes también tu salida, mándame las dos: ${ejemploFecha(14)} al ${ejemploFecha(18)}_`,
 
   pedirCheckout: () =>
-    `¿Y cuál es tu fecha de salida?\n\nEscríbela así: *DD/MM/YYYY*`,
+    `¿Y cuál es tu fecha de salida?\n\nEscríbela así: *DD/MM/YYYY* (o dime cuánto tiempo, ej. *una semana*, *un mes*)`,
 
   pedirPersonas: () =>
     `¿Cuántas personas se hospedarán?`,
@@ -521,10 +448,25 @@ const MSG = {
     `Por favor elige una opción:\n\n1️⃣ *Por noche*\n2️⃣ *Por mes*`,
 
   errorFecha: () =>
-    `No pude entender esa fecha 😅\n\nEscríbela así: *DD/MM/YYYY*\nEjemplo: 15/06/2026`,
+    `No pude entender esa fecha 😅\n\nEscríbela así: *DD/MM/YYYY*\nEjemplo: ${ejemploFecha(14)}`,
 
-  errorFechaPregunta: () =>
-    `Con gusto te ayudo con eso 🙂 Para poder seguir necesito tu fecha de llegada — ¿me la compartes así: *DD/MM/YYYY*?`,
+  errorFechaPregunta: (cual: 'llegada' | 'salida' = 'llegada') =>
+    `Con gusto te ayudo con eso 🙂 Para poder seguir necesito tu fecha de ${cual} — ¿me la compartes así: *DD/MM/YYYY*?`,
+
+  cortesiaFecha: (cual: 'llegada' | 'salida') =>
+    `Con gusto 🙂 Cuando la tengas, compárteme tu fecha de ${cual} así: *DD/MM/YYYY* (ej. ${ejemploFecha(14)}) y te doy el precio estimado.`,
+
+  duracionSinLlegada: (dur: Duracion) =>
+    `${PREFIJO_DURACION}${dur.texto}* 👍\n\n¿A partir de qué fecha llegarías? Escríbela así: *DD/MM/YYYY*\nEjemplo: ${ejemploFecha(14)}`,
+
+  pedirVisita: () =>
+    `¡Claro! 🙌 Con gusto agendamos una visita para que conozcas los lofts. Un asesor te contactará en breve para coordinar día y hora.`,
+
+  sinFechaDefinida: () =>
+    `Sin problema 🙂 Le paso tu solicitud a un asesor para que te ayude a definir fechas y opciones. En breve te contacta. 🙌`,
+
+  retomarConAsesor: () =>
+    `¡Hola de nuevo! 👋 Gracias por escribirnos. Ya le aviso a un asesor para que retome tu solicitud contigo; en breve te contacta. 🙌`,
 
   escalarFecha: () =>
     `Ya te paso con un asesor para que te ayude directamente con eso. En un momento te contactan. 🙌`,
@@ -539,7 +481,7 @@ const MSG = {
     `Ya te paso con un asesor para que te ayude directamente con eso. En un momento te contactan. 🙌`,
 
   errorFechaPasada: () =>
-    `Esa fecha ya pasó 😅\n\nEscribe una fecha de llegada a partir de hoy.\nEjemplo: 15/06/2026`,
+    `Esa fecha ya pasó 😅\n\nEscribe una fecha de llegada a partir de hoy.\nEjemplo: ${ejemploFecha(14)}`,
 
   errorFechaCheckoutInvalida: () =>
     `La fecha de salida debe ser *posterior* a la de llegada 😅\n\nEscríbela así: *DD/MM/YYYY*`,
@@ -620,7 +562,7 @@ function detectFaq(textLower: string): string | null {
 
 function faqResponse(key: string): string {
   switch (key) {
-    case 'precios': return `El costo depende de la disponibilidad y las fechas. En cuanto un asesor confirme disponibilidad te comparte el precio exacto. 😊`
+    case 'precios': return MSG.precios()
     case 'ubicacion': return MSG.ubicacion()
     case 'servicios': return MSG.servicios()
     case 'estacionamiento': return MSG.estacionamiento()
@@ -644,24 +586,14 @@ function flowReminder(fase: string | null): string {
   return ''
 }
 
-// Preguntas/objeciones fuera de guión durante los pasos de nombre/fecha
-// (ej. "¿se puede rentar anual?"), que no encajan en ninguna categoría de
-// detectFaq(). Sin esto, el bot las trataba como un intento fallido de dar
-// el dato pedido y repetía el mismo error de formato sin fin.
-function pareceInterrogacion(textLower: string): boolean {
-  if (/[?¿]/.test(textLower)) return true
-  return /^(puedo|se puede|podr[ií]a|quiero saber|quisiera saber|me interesa saber|necesito saber|informaci[oó]n|qu[eé]|c[oó]mo|cu[aá]ndo|d[oó]nde|por qu[eé])\b/.test(textLower.trim())
-}
-
 // Si el bot ya le repitió el mismo error una vez en este paso y el lead
 // sigue sin poder cumplir el formato, insistir una tercera vez solo genera
 // el mismo loop que atoró a Horacio Mendoza — mejor escalar a un asesor.
-async function ultimoMensajeFueError(
+async function ultimoMensajeBot(
   supabase: ReturnType<typeof createServiceRoleClient>,
-  convId: string | undefined,
-  textosError: string[]
-): Promise<boolean> {
-  if (!convId) return false
+  convId: string | undefined
+): Promise<string | null> {
+  if (!convId) return null
   const { data } = await supabase
     .from('whatsapp_mensajes')
     .select('contenido')
@@ -670,7 +602,124 @@ async function ultimoMensajeFueError(
     .order('created_at', { ascending: false })
     .limit(1)
     .maybeSingle()
-  return !!data && textosError.includes(data.contenido)
+  return (data?.contenido as string | undefined) ?? null
+}
+
+async function ultimoMensajeFueError(
+  supabase: ReturnType<typeof createServiceRoleClient>,
+  convId: string | undefined,
+  textosError: string[]
+): Promise<boolean> {
+  const ultimo = await ultimoMensajeBot(supabase, convId)
+  return !!ultimo && textosError.includes(ultimo)
+}
+
+// Respuesta a "¿cuánto cuesta?": siempre las tarifas publicadas (antes
+// contestaba "depende de la disponibilidad" y el lead se quedaba sin precio).
+// Si ya tenemos sus fechas, además el rango estimado para su estancia.
+async function respuestaPrecio(
+  supabase: ReturnType<typeof createServiceRoleClient>,
+  leadId: string | undefined
+): Promise<string> {
+  const tarifas = MSG.precios()
+  const nota = `\n\n_El precio exacto te lo confirma un asesor según el loft y la disponibilidad en tus fechas._`
+  if (!leadId) return tarifas + nota
+  const { data: lead } = await supabase
+    .from('leads').select('fecha_checkin, fecha_checkout, num_personas').eq('id', leadId).maybeSingle()
+  const checkin = (lead?.fecha_checkin as string | null) || ''
+  const checkout = (lead?.fecha_checkout as string | null) || ''
+  const noches = calcularNoches(checkin, checkout)
+  if (!noches) return tarifas + nota
+  const tipo = inferirTipoRenta(checkin, checkout)
+  const personas = (lead?.num_personas as number | null) || null
+  let rango = personas ? calcularRangoPrecio(tipo, personas, noches) : null
+  if (!personas) {
+    const r1 = calcularRangoPrecio(tipo, 1, noches)
+    const r2 = calcularRangoPrecio(tipo, 2, noches)
+    if (r1 && r2) rango = { min: Math.min(r1.min, r2.min), max: Math.max(r1.max, r2.max) }
+  }
+  if (!rango) return tarifas + nota
+  return (
+    `Para tu estancia del *${formatFecha(checkin)}* al *${formatFecha(checkout)}*` +
+    `${personas ? ` (${personas} persona${personas !== 1 ? 's' : ''})` : ''}, el costo estimado ronda:\n\n` +
+    `💰 *${formatRangoPrecio(rango)}*${tipo === 'mes' ? ' (mensual)' : ' (total de tu estancia)'}\n\n` +
+    tarifas + nota
+  )
+}
+
+// Fases 'checkin' y 'checkout'. Acepta fechas sueltas, rangos ("16 al 19 de
+// octubre", "02/10/2026 al 04/10/2026") y duraciones ("un mes", "3 noches").
+// Mensajes que no son fechas (visita, "Gracias", "no tengo fecha de salida")
+// ya no reciben "No pude entender esa fecha": se escalan o se contestan.
+// Límite de 2 errores seguidos → asesor, igual en llegada y en salida.
+async function manejarFaseFecha(
+  fase: 'checkin' | 'checkout',
+  ctx: {
+    supabase: ReturnType<typeof createServiceRoleClient>
+    convId: string | undefined
+    leadId: string | undefined
+    from: string
+    text: string
+  }
+): Promise<{ response: string; nextFase: string }> {
+  const { supabase, convId, leadId, from, text } = ctx
+  const hoy = hoyISO()
+  const cual = fase === 'checkin' ? 'llegada' : 'salida'
+  const ultimoBot = await ultimoMensajeBot(supabase, convId)
+  const yaFalloAntes = !!ultimoBot && PREFIJOS_ERROR_FECHA.some((p) => ultimoBot.startsWith(p))
+
+  let checkinGuardado: string | null = null
+  if (fase === 'checkout' && leadId) {
+    const { data } = await supabase.from('leads').select('fecha_checkin').eq('id', leadId).maybeSingle()
+    checkinGuardado = (data?.fecha_checkin as string | null) || null
+  }
+  let duracionPendiente: Duracion | null = null
+  if (fase === 'checkin' && ultimoBot?.startsWith(PREFIJO_DURACION)) {
+    duracionPendiente = extraerFechas(ultimoBot.slice(PREFIJO_DURACION.length).split('*')[0], hoy).duracion
+  }
+
+  const escalar = async (alerta: string, response: string) => {
+    await alertarAdmin(`${alerta}\n\n📱 *WhatsApp:* ${from}\n💬 *Último mensaje:* "${text}"\n\nContactar directamente.`)
+    return { response, nextFase: 'esperando_asesor' }
+  }
+  const atorado = () =>
+    escalar(`⚠️ *Lead atorado dando su fecha de ${cual}*\n\nNo pudo pasar el paso de fecha en 2 intentos.`, MSG.escalarFecha())
+
+  const d = decidirFechas(fase, text, hoy, checkinGuardado, duracionPendiente)
+  switch (d.tipo) {
+    case 'completo': {
+      if (leadId) {
+        await supabase.from('leads').update({
+          ...(d.checkin ? { fecha_checkin: d.checkin } : {}),
+          fecha_checkout: d.checkout,
+        }).eq('id', leadId)
+      }
+      const llegada = d.checkin ? `Llegada: *${formatFecha(d.checkin)}* ✅\n` : ''
+      return { response: `${llegada}Salida: *${formatFecha(d.checkout)}* ✅\n\n` + MSG.pedirPersonas(), nextFase: 'personas' }
+    }
+    case 'solo_checkin':
+      if (leadId) await supabase.from('leads').update({ fecha_checkin: d.checkin }).eq('id', leadId)
+      return { response: `Llegada: *${formatFecha(d.checkin)}* ✅\n\n` + MSG.pedirCheckout(), nextFase: 'checkout' }
+    case 'solo_duracion':
+      return { response: MSG.duracionSinLlegada(d.duracion), nextFase: 'checkin' }
+    case 'fecha_pasada':
+      if (yaFalloAntes) return atorado()
+      return { response: MSG.errorFechaPasada(), nextFase: 'checkin' }
+    case 'checkout_invalido':
+      if (yaFalloAntes) return atorado()
+      return { response: MSG.errorFechaCheckoutInvalida(), nextFase: 'checkout' }
+    case 'sin_fecha': {
+      const tipo = clasificarSinFecha(text)
+      if (tipo === 'visita') return escalar('🏠 *Lead quiere agendar una visita*', MSG.pedirVisita())
+      if (tipo === 'sin_fecha_definida') return escalar(`📅 *Lead sin fecha de ${cual} definida*`, MSG.sinFechaDefinida())
+      if (tipo === 'quiere_humano') return escalar('🙋 *Lead pide atención de una persona*', MSG.escalarFecha())
+      if (tipo === 'info') return { response: MSG.precios() + flowReminder(fase), nextFase: fase }
+      if (yaFalloAntes) return atorado()
+      if (tipo === 'pregunta') return { response: MSG.errorFechaPregunta(cual), nextFase: fase }
+      if (tipo === 'cortesia') return { response: MSG.cortesiaFecha(cual), nextFase: fase }
+      return { response: MSG.errorFecha(), nextFase: fase }
+    }
+  }
 }
 
 // ─── Webhook verification (GET) ───────────────────────────────────────────────
@@ -787,8 +836,55 @@ export async function POST(request: Request) {
       }
     }
 
-    // ── Si no hay conversación, crear lead + conversación ───────────────────
+    // ── Lead que vuelve tras cerrarse su conversación ───────────────────────
+    // Antes se creaba una conversación nueva y el bot le volvía a pedir el
+    // nombre desde cero, aunque Alexis ya lo hubiera atendido (caso Fernando,
+    // +525668594640, 29-sep) o acabara de decir "no" al rango (Miguel,
+    // +525574429353). Ahora se reabre la conversación anterior y pasa a asesor.
+    let retomadaConAsesor = false
     if (!conv) {
+      const { data: convCerrada } = await supabase
+        .from('whatsapp_conversaciones')
+        .select('id, lead_id, fase, humano_intervino, ultimo_mensaje_at')
+        .eq('whatsapp', from)
+        .eq('estado', 'cerrada')
+        .order('ultimo_mensaje_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      if (convCerrada) {
+        const { data: leadPrevio } = convCerrada.lead_id
+          ? await supabase.from('leads').select('id, nombre, stage, num_personas').eq('id', convCerrada.lead_id).maybeSingle()
+          : { data: null }
+        if (debeRetomarConAsesor({
+          humanoIntervino: !!convCerrada.humano_intervino,
+          stage: leadPrevio?.stage as string | undefined,
+          fase: convCerrada.fase as string | undefined,
+          ultimoMensajeAt: convCerrada.ultimo_mensaje_at as string | undefined,
+          ahora: new Date(),
+        })) {
+          retomadaConAsesor = true
+          convId = convCerrada.id as string
+          leadId = (convCerrada.lead_id as string | null) || undefined
+          await supabase.from('whatsapp_conversaciones').update({ estado: 'abierta' }).eq('id', convId)
+          if (leadId && leadPrevio?.stage === 'no_interesado') {
+            // Ya no está descartado: vuelve a la columna activa que le toca.
+            await supabase.from('leads')
+              .update({ stage: leadPrevio.num_personas ? 'cotizado' : 'nuevo_contacto' })
+              .eq('id', leadId)
+          }
+          await alertarAdmin(
+            `🔁 *Lead retomó la conversación*\n\n` +
+            `👤 *Nombre:* ${leadPrevio?.nombre || profileName || 'Sin nombre'}\n` +
+            `📱 *WhatsApp:* ${from}\n` +
+            `💬 "${text}"\n\n` +
+            `${convCerrada.humano_intervino ? 'Ya lo había atendido un asesor' : 'Había dicho que no le interesaba'} — el bot no reinicia el flujo. Contactar.`
+          )
+        }
+      }
+    }
+
+    // ── Si no hay conversación, crear lead + conversación ───────────────────
+    if (!conv && !retomadaConAsesor) {
       leadId = await buscarOCrearLead(supabase, from, profileName, text)
 
       // Registrar actividad
@@ -845,11 +941,19 @@ export async function POST(request: Request) {
     let response = ''
     let nextFase = fase
     let cerrarConversacion = false
+    // En los pasos de fecha, un mensaje que trae fecha/duración ("del 15 al
+    // 19, ¿cuánto sale?") se procesa como fecha, no como pregunta frecuente.
+    const traeFecha = (fase === 'checkin' || fase === 'checkout') &&
+      (() => { const r = extraerFechas(text, hoyISO()); return r.fechas.length > 0 || !!r.duracion })()
 
     // Comando global: reiniciar en cualquier fase
     if (textLower === 'reiniciar') {
       response = MSG.bienvenida()
       nextFase = 'nombre'
+
+    } else if (retomadaConAsesor) {
+      response = MSG.retomarConAsesor()
+      nextFase = 'esperando_asesor'
 
     // Ya se avisó una vez que un asesor la va a contactar — no insistir con
     // el flujo ni repetir el mensaje enlatado en cada mensaje que mande el
@@ -868,8 +972,9 @@ export async function POST(request: Request) {
       }
 
     // FAQ: responde preguntas sin romper el flujo de reserva
-    } else if (fase && detectFaq(textLower)) {
-      response = faqResponse(detectFaq(textLower)!) + flowReminder(fase)
+    } else if (fase && detectFaq(textLower) && !traeFecha) {
+      const faq = detectFaq(textLower)!
+      response = (faq === 'precios' ? await respuestaPrecio(supabase, leadId) : faqResponse(faq)) + flowReminder(fase)
       nextFase = fase
 
     // Despedida/pausa: no insistir con el menú del flujo
@@ -889,8 +994,8 @@ export async function POST(request: Request) {
       }
 
     } else if (fase === 'nombre') {
-      const nombre = text.trim()
-      if (!esNombreValido(nombre)) {
+      const nombre = extraerNombre(text)
+      if (!nombre) {
         const yaFalloAntes = await ultimoMensajeFueError(supabase, convId, [MSG.errorNombre(), MSG.errorNombrePregunta()])
         if (yaFalloAntes) {
           response = MSG.escalarNombre()
@@ -927,50 +1032,10 @@ export async function POST(request: Request) {
         nextFase = 'checkin'
       }
 
-    } else if (fase === 'checkin') {
-      const fecha = parseDate(text)
-      if (!fecha) {
-        const yaFalloAntes = await ultimoMensajeFueError(supabase, convId, [MSG.errorFecha(), MSG.errorFechaPregunta()])
-        if (yaFalloAntes) {
-          response = MSG.escalarFecha()
-          nextFase = 'esperando_asesor'
-          await alertarAdmin(
-            `⚠️ *Lead atorado dando su fecha de llegada*\n\n📱 *WhatsApp:* ${from}\n💬 *Último mensaje:* "${text}"\n\nNo pudo pasar el paso de fecha en 2 intentos — revisar manualmente.`
-          )
-        } else if (pareceInterrogacion(textLower)) {
-          response = MSG.errorFechaPregunta()
-          nextFase = 'checkin'
-        } else {
-          response = MSG.errorFecha()
-          nextFase = 'checkin'
-        }
-      } else if (esFechaAnteriorAHoy(fecha)) {
-        response = MSG.errorFechaPasada()
-        nextFase = 'checkin'
-      } else {
-        if (leadId) await supabase.from('leads').update({ fecha_checkin: fecha }).eq('id', leadId)
-        response = `Llegada: *${text}* ✅\n\n` + MSG.pedirCheckout()
-        nextFase = 'checkout'
-      }
-
-    } else if (fase === 'checkout') {
-      const fecha = parseDate(text)
-      if (!fecha) {
-        response = MSG.errorFecha()
-        nextFase = 'checkout'
-      } else {
-        const { data: leadCheckin } = leadId
-          ? await supabase.from('leads').select('fecha_checkin').eq('id', leadId).maybeSingle()
-          : { data: null }
-        if (leadCheckin?.fecha_checkin && fecha <= leadCheckin.fecha_checkin) {
-          response = MSG.errorFechaCheckoutInvalida()
-          nextFase = 'checkout'
-        } else {
-          if (leadId) await supabase.from('leads').update({ fecha_checkout: fecha }).eq('id', leadId)
-          response = `Salida: *${text}* ✅\n\n` + MSG.pedirPersonas()
-          nextFase = 'personas'
-        }
-      }
+    } else if (fase === 'checkin' || fase === 'checkout') {
+      const r = await manejarFaseFecha(fase, { supabase, convId, leadId, from, text })
+      response = r.response
+      nextFase = r.nextFase
 
     } else if (fase === 'personas') {
       const num = parseInt(text, 10)
@@ -1134,7 +1199,9 @@ export async function POST(request: Request) {
       const { error: updateError } = await supabase.from('whatsapp_conversaciones').update({
         fase: nextFase,
         ultimo_mensaje_at: new Date().toISOString(),
-        seguimiento_enviado: false,
+        // Re-armar el "¿Te quedó alguna duda?" solo si el lead sigue en el
+        // flujo del bot; si ya espera asesor, ya confirmó o se descartó, no.
+        seguimiento_enviado: FASES_SIN_SEGUIMIENTO.includes(nextFase || ''),
         ...(cerrarConversacion ? { estado: 'cerrada' } : {}),
       }).eq('id', convId)
       if (updateError) console.error('[webhook] conv update error:', updateError)
@@ -1154,6 +1221,12 @@ export async function POST(request: Request) {
     if (response) {
       await sendMetaWhatsAppMessage({ to: from, body: response })
     }
+
+    // El cron de seguimiento corre 1 vez al día (Vercel Hobby) y con eso hay
+    // leads cuya ventana de 10-23h nunca coincide con el cron. Se aprovecha
+    // cada mensaje entrante para barrer pendientes (después de responder,
+    // con throttle de 10 min por instancia y sin enviar de madrugada).
+    after(() => barridoSeguimientosOportunista(supabase))
 
     return Response.json({ ok: true })
   } catch (error) {
