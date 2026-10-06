@@ -54,6 +54,8 @@ const getInfoTemplateForLead = (lead) => {
 };
 
 
+const PUSH_ENDPOINT_KEY = "crmanax_push_endpoint";
+
 export default function CRM() {
   const [leads, setLeads] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -316,10 +318,27 @@ export default function CRM() {
       setPushActivo(false);
       return;
     }
-    navigator.serviceWorker.ready
-      .then((reg) => reg.pushManager.getSubscription())
-      .then((sub) => setPushActivo(!!sub))
-      .catch(() => setPushActivo(false));
+    // Si este dispositivo ya se activó antes, mostrarlo activo de inmediato
+    // (en iPhone, serviceWorker.ready puede tardar o no resolver al recargar y
+    // el botón volvía a decir "Activar" aunque sí estuvieran activas).
+    let guardado = null;
+    try { guardado = localStorage.getItem(PUSH_ENDPOINT_KEY); } catch {}
+    if (guardado) setPushActivo(true);
+    // Verificación real con getRegistration() (no se queda esperando como
+    // ready). Solo se marca inactivo si el navegador confirma que no hay
+    // suscripción.
+    navigator.serviceWorker.getRegistration()
+      .then((reg) => (reg ? reg.pushManager.getSubscription() : undefined))
+      .then((sub) => {
+        if (sub) {
+          setPushActivo(true);
+          try { localStorage.setItem(PUSH_ENDPOINT_KEY, sub.endpoint); } catch {}
+        } else if (sub === null) {
+          setPushActivo(false);
+          try { localStorage.removeItem(PUSH_ENDPOINT_KEY); } catch {}
+        }
+      })
+      .catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -517,6 +536,7 @@ export default function CRM() {
         body: JSON.stringify({ subscription, userId }),
       });
       if (!res.ok) throw new Error("No se pudo guardar la suscripción");
+      try { localStorage.setItem(PUSH_ENDPOINT_KEY, subscription.endpoint); } catch {}
       setPushActivo(true);
       showToast("🔔 Notificaciones activas en este dispositivo");
     } catch (e) {
