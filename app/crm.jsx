@@ -54,6 +54,26 @@ const getInfoTemplateForLead = (lead) => {
 };
 
 
+// Suscripción push de este dispositivo. getRegistration() primero (no se queda
+// esperando); si no hay registro, serviceWorker.ready con límite de 3 s.
+// Devuelve la suscripción, null si el navegador confirma que no hay, o
+// undefined si no se pudo saber.
+async function obtenerSuscripcionPush() {
+  try {
+    let reg = await navigator.serviceWorker.getRegistration();
+    if (!reg) {
+      reg = await Promise.race([
+        navigator.serviceWorker.ready,
+        new Promise((resolve) => setTimeout(() => resolve(undefined), 3000)),
+      ]);
+    }
+    if (!reg) return undefined;
+    return await reg.pushManager.getSubscription();
+  } catch {
+    return undefined;
+  }
+}
+
 const PUSH_ENDPOINT_KEY = "crmanax_push_endpoint";
 
 export default function CRM() {
@@ -314,10 +334,9 @@ export default function CRM() {
       setPushActivo(false);
       return;
     }
-    if (Notification.permission !== "granted") {
-      setPushActivo(false);
-      return;
-    }
+    // OJO: no se confía en Notification.permission. En el iPhone (app abierta
+    // desde el ícono) reporta "denied" aunque las notificaciones sí lleguen
+    // (verificado 6-oct). Lo que manda es que exista la suscripción.
     // Si este dispositivo ya se activó antes, mostrarlo activo de inmediato
     // (en iPhone, serviceWorker.ready puede tardar o no resolver al recargar y
     // el botón volvía a decir "Activar" aunque sí estuvieran activas).
@@ -327,8 +346,7 @@ export default function CRM() {
     // Verificación real con getRegistration() (no se queda esperando como
     // ready). Solo se marca inactivo si el navegador confirma que no hay
     // suscripción.
-    navigator.serviceWorker.getRegistration()
-      .then((reg) => (reg ? reg.pushManager.getSubscription() : undefined))
+    obtenerSuscripcionPush()
       .then((sub) => {
         if (sub) {
           setPushActivo(true);
@@ -510,6 +528,23 @@ export default function CRM() {
     }
 
     try {
+      // Si ya hay suscripción viva, solo se vuelve a registrar en el servidor:
+      // no se depende del permiso que reporte el iPhone (a veces dice "denied"
+      // aunque las notificaciones sí llegan).
+      const subExistente = await obtenerSuscripcionPush();
+      if (subExistente) {
+        const res0 = await fetch("/api/push/subscribe", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ subscription: subExistente, userId }),
+        });
+        if (!res0.ok) throw new Error("No se pudo guardar la suscripción");
+        try { localStorage.setItem(PUSH_ENDPOINT_KEY, subExistente.endpoint); } catch {}
+        setPushActivo(true);
+        showToast("🔔 Notificaciones activas en este dispositivo");
+        return;
+      }
+
       const permission = await Notification.requestPermission();
       setPushPermission(permission);
       if (permission !== "granted") {
@@ -548,6 +583,7 @@ export default function CRM() {
 
   const pushLabel =
     pushActivo ? "🔔 Notificaciones activas"
+    : pushActivo === null ? "🔔 Notificaciones"
     : pushPermission === "denied" ? "⚠️ Notificaciones bloqueadas"
     : "🔕 Activar notificaciones";
   const pushTitle =
