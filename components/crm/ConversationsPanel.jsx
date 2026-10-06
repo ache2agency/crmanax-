@@ -1,5 +1,5 @@
 "use client";
-import { useState, useRef, useEffect, Fragment } from "react";
+import { useState, useRef, useEffect, Fragment, memo, forwardRef, useImperativeHandle } from "react";
 
 const RESPUESTAS_RAPIDAS = [
   { grupo: "Información general", items: [
@@ -235,6 +235,36 @@ function formatListTime(dateStr) {
     : { day: "2-digit", month: "2-digit", year: "2-digit", timeZone: "America/Mexico_City" });
 }
 
+// El borrador vive aquí y no en crm.jsx: así cada tecla solo vuelve a dibujar esta
+// barra, no todo el CRM (la lista de ~400 conversaciones, el chat y los filtros).
+// Mismo problema que se arregló en windsorcrm (28-ago).
+const MessageInputBar = memo(forwardRef(function MessageInputBar({ sending, onSend }, ref) {
+  const [text, setText] = useState("");
+  useImperativeHandle(ref, () => ({ setText }), []);
+  const handleSend = async () => {
+    if (sending || !text.trim()) return;
+    const ok = await onSend(text);
+    if (ok) setText("");
+  };
+  return (
+    <>
+      <textarea
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        rows={1}
+        placeholder="Escribe un mensaje..."
+      />
+      <button
+        className="wa-send-btn"
+        onClick={handleSend}
+        disabled={sending || !text.trim()}
+      >
+        <span style={{ color: "#fff", fontSize: 18 }}>{sending ? "⏳" : "➤"}</span>
+      </button>
+    </>
+  );
+}));
+
 export default function ConversationsPanel({
   filteredWhatsConvs,
   convsLoading,
@@ -250,8 +280,8 @@ export default function ConversationsPanel({
   setSelectedConv,
   confirmReturnToBotIfNeeded,
   fetchConvMessages,
-  setAgentMessage,
   leads,
+  leadsById,
   vendedores,
   getConversationBadgeStyle,
   getModeLabel,
@@ -263,7 +293,6 @@ export default function ConversationsPanel({
   setView,
   setSelectedLead,
   convMessages,
-  agentMessage,
   sendAgentReply,
   sendingAgent,
   sendReactivacion,
@@ -280,6 +309,7 @@ export default function ConversationsPanel({
   const [guardandoEtapa, setGuardandoEtapa] = useState(false);
   const [showRR, setShowRR] = useState(false);
   const messagesEndRef = useRef(null);
+  const inputRef = useRef(null);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -316,7 +346,7 @@ export default function ConversationsPanel({
     await confirmReturnToBotIfNeeded(async () => {
       setSelectedConv(c);
       await fetchConvMessages(c.id);
-      setAgentMessage("");
+      inputRef.current?.setText("");
       setMobileView("chat");
       if (isConvUnread(c)) setConvVisto(c, true);
     });
@@ -330,7 +360,7 @@ export default function ConversationsPanel({
   };
 
   const getDisplayName = (c) => {
-    const lead = leads.find((l) => l.id === c.lead_id);
+    const lead = leadsById ? leadsById.get(c.lead_id) : leads.find((l) => l.id === c.lead_id);
     return lead?.nombre || c.whatsapp;
   };
 
@@ -679,7 +709,7 @@ export default function ConversationsPanel({
                       {grupo.items.map((item) => (
                         <button
                           key={item.label}
-                          onClick={() => { setAgentMessage(item.texto); setShowRR(false); }}
+                          onClick={() => { inputRef.current?.setText(item.texto); setShowRR(false); }}
                           style={{ display: "block", width: "100%", textAlign: "left", padding: "8px 14px", background: "none", border: "none", borderBottom: "1px solid #f0f0f0", cursor: "pointer", fontSize: 13, color: "#111" }}
                           onMouseEnter={(e) => e.currentTarget.style.background = "#f5f5f5"}
                           onMouseLeave={(e) => e.currentTarget.style.background = "none"}
@@ -699,19 +729,7 @@ export default function ConversationsPanel({
                 >
                   ⚡
                 </button>
-                <textarea
-                  value={agentMessage}
-                  onChange={(e) => setAgentMessage(e.target.value)}
-                  rows={1}
-                  placeholder="Escribe un mensaje..."
-                />
-                <button
-                  className="wa-send-btn"
-                  onClick={sendAgentReply}
-                  disabled={sendingAgent || !agentMessage.trim()}
-                >
-                  <span style={{ color: "#fff", fontSize: 18 }}>{sendingAgent ? "⏳" : "➤"}</span>
-                </button>
+                <MessageInputBar ref={inputRef} sending={sendingAgent} onSend={sendAgentReply} />
               </div>
             </>
           )}

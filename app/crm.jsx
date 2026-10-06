@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { createClient } from "@/utils/supabase/client";
 import AgendaPanel from "@/components/crm/AgendaPanel";
 import ConversationsPanel from "@/components/crm/ConversationsPanel";
@@ -72,6 +72,8 @@ export default function CRM() {
   const [pushPermission, setPushPermission] = useState(
     typeof window !== "undefined" && "Notification" in window ? Notification.permission : "unsupported"
   );
+  // ¿Este dispositivo tiene una suscripción push viva? null = todavía no se sabe.
+  const [pushActivo, setPushActivo] = useState(null);
   const [vendedores, setVendedores] = useState([]);
   const [lofts, setLofts] = useState([]);
   const [newLead, setNewLead] = useState({ nombre: "", email: "", whatsapp: "", tipo_renta: "noche", fecha_checkin: "", fecha_checkout: "", num_personas: 1, loft_id: "", presupuesto: "", valor: "", notas: "", asignado_a: "" });
@@ -117,7 +119,6 @@ export default function CRM() {
   const [botPrompt, setBotPrompt] = useState("");
   const [botLoading, setBotLoading] = useState(false);
   const [botSaving, setBotSaving] = useState(false);
-  const [agentMessage, setAgentMessage] = useState("");
   const [sendingAgent, setSendingAgent] = useState(false);
   const sendingAgentRef = useRef(false);
   const whatsConvsPollingRef = useRef(false);
@@ -304,6 +305,23 @@ export default function CRM() {
     }
   }, []);
 
+  // Estado real de las notificaciones en ESTE dispositivo (para que el botón
+  // siempre diga si están activas, no solo antes de dar el permiso).
+  useEffect(() => {
+    if (typeof window === "undefined" || !("serviceWorker" in navigator) || !("PushManager" in window)) {
+      setPushActivo(false);
+      return;
+    }
+    if (Notification.permission !== "granted") {
+      setPushActivo(false);
+      return;
+    }
+    navigator.serviceWorker.ready
+      .then((reg) => reg.pushManager.getSubscription())
+      .then((sub) => setPushActivo(!!sub))
+      .catch(() => setPushActivo(false));
+  }, []);
+
   useEffect(() => {
     if (!selectedLead?.id) {
       setLeadTimeline([]);
@@ -462,16 +480,29 @@ export default function CRM() {
   };
 
   const activarNotificaciones = async (userId) => {
-    if (typeof window === "undefined" || !("serviceWorker" in navigator) || !("PushManager" in window)) return;
+    if (typeof window === "undefined" || !("serviceWorker" in navigator) || !("PushManager" in window)) {
+      showToast("Este navegador no permite notificaciones. En iPhone abre el CRM desde el ícono de la pantalla de inicio.", "error");
+      return;
+    }
     const vapidPublicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
-    if (!vapidPublicKey) return;
+    if (!vapidPublicKey || !userId) {
+      showToast("No se pudieron activar las notificaciones (falta configuración).", "error");
+      return;
+    }
 
     try {
       const permission = await Notification.requestPermission();
       setPushPermission(permission);
-      if (permission !== "granted") return;
+      if (permission !== "granted") {
+        setPushActivo(false);
+        showToast("Las notificaciones están bloqueadas. Actívalas en Ajustes del teléfono → Notificaciones.", "error");
+        return;
+      }
 
-      const registration = await navigator.serviceWorker.register("/sw.js");
+      // Esperar a que el service worker esté activo: en iPhone, suscribirse
+      // justo después de register() falla sin avisar.
+      await navigator.serviceWorker.register("/sw.js");
+      const registration = await navigator.serviceWorker.ready;
       let subscription = await registration.pushManager.getSubscription();
       if (!subscription) {
         subscription = await registration.pushManager.subscribe({
@@ -480,15 +511,29 @@ export default function CRM() {
         });
       }
 
-      await fetch("/api/push/subscribe", {
+      const res = await fetch("/api/push/subscribe", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ subscription, userId }),
       });
+      if (!res.ok) throw new Error("No se pudo guardar la suscripción");
+      setPushActivo(true);
+      showToast("🔔 Notificaciones activas en este dispositivo");
     } catch (e) {
       console.error("Error activando notificaciones push:", e);
+      setPushActivo(false);
+      showToast("No se pudieron activar las notificaciones. Intenta de nuevo.", "error");
     }
   };
+
+  const pushLabel =
+    pushActivo ? "🔔 Notificaciones activas"
+    : pushPermission === "denied" ? "⚠️ Notificaciones bloqueadas"
+    : "🔕 Activar notificaciones";
+  const pushTitle =
+    pushActivo ? "Este dispositivo recibe una notificación con cada mensaje nuevo. Toca para volver a registrarlo."
+    : pushPermission === "denied" ? "El teléfono bloqueó las notificaciones: actívalas en Ajustes → Notificaciones y vuelve a tocar aquí."
+    : "Recibe una notificación cada vez que llegue un mensaje nuevo";
 
   const fetchLeads = async (userId, admin) => {
     setLoading(true);
@@ -930,8 +975,10 @@ export default function CRM() {
     thenDo();
   };
 
-  const sendAgentReply = async () => {
-    if (!selectedConv || !agentMessage.trim() || sendingAgentRef.current) return;
+  // Recibe el texto desde MessageInputBar (el borrador vive ahí para que teclear
+  // no vuelva a dibujar todo el CRM). Devuelve true si se envió.
+  const sendAgentReply = async (agentMessage) => {
+    if (!selectedConv || !agentMessage?.trim() || sendingAgentRef.current) return false;
     sendingAgentRef.current = true;
     setSendingAgent(true);
     try {
@@ -948,7 +995,7 @@ export default function CRM() {
           else if (data?.error) errMsg = data.error;
         } catch {}
         showToast(errMsg, "error");
-        return;
+        return false;
       }
 
       const now = new Date().toISOString();
@@ -966,7 +1013,6 @@ export default function CRM() {
             : c
         )
       );
-      setAgentMessage("");
       showToast("Mensaje enviado. Si no llega a WhatsApp, el número debe haber iniciado chat con el bot (sandbox).");
 
       // Guardar en historial (no bloquea la UI)
@@ -992,8 +1038,10 @@ export default function CRM() {
           meta: { conversacion_id: selectedConv.id, whatsapp: selectedConv.whatsapp },
         });
       }
+      return true;
     } catch (e) {
       showToast(e?.message || "Error enviando mensaje de WhatsApp", "error");
+      return false;
     } finally {
       sendingAgentRef.current = false;
       setSendingAgent(false);
@@ -1118,25 +1166,27 @@ export default function CRM() {
   });
 
   const conversationPhaseOptions = ["todas", ...Array.from(new Set(whatsConvs.map((c) => c.fase).filter(Boolean)))];
-  const filteredWhatsConvs = whatsConvs.filter((conv) => {
+  // Lookup O(1) en vez de leads.find() por cada conversación (~400 × ~400 en cada render).
+  const leadsById = useMemo(() => new Map(leads.map((l) => [l.id, l])), [leads]);
+  const filteredWhatsConvs = useMemo(() => whatsConvs.filter((conv) => {
+    const lead = leadsById.get(conv.lead_id);
     // Asesores solo ven conversaciones de sus leads
     if (!isAdmin && currentProfile?.id) {
-      const lead = leads.find((l) => l.id === conv.lead_id);
       if (lead && lead.asignado_a !== currentProfile.id) return false;
     }
     const searchValue = convSearch.trim().toLowerCase();
     const matchesSearch =
       !searchValue ||
       conv.whatsapp?.toLowerCase().includes(searchValue) ||
-      leads.find((lead) => lead.id === conv.lead_id)?.nombre?.toLowerCase().includes(searchValue) ||
-      leads.find((lead) => lead.id === conv.lead_id)?.email?.toLowerCase().includes(searchValue);
+      lead?.nombre?.toLowerCase().includes(searchValue) ||
+      lead?.email?.toLowerCase().includes(searchValue);
     const matchesMode =
       convModeFilter === "todos" ||
       (convModeFilter === "humano" ? !!conv.modo_humano : !conv.modo_humano);
     const matchesPhase =
       convPhaseFilter === "todas" || (conv.fase || "—") === convPhaseFilter;
     return matchesSearch && matchesMode && matchesPhase;
-  });
+  }), [whatsConvs, leadsById, isAdmin, currentProfile?.id, convSearch, convModeFilter, convPhaseFilter]);
 
   const selectedConvLead = leads.find((lead) => lead.id === selectedConv?.lead_id) || null;
   const selectedConvOwner = vendedores.find((v) => v.id === selectedConv?.tomado_por) || null;
@@ -1720,14 +1770,12 @@ export default function CRM() {
           {/* Desktop user */}
           <div className="desktop-user" style={{ display: "flex", alignItems: "center", gap: 12 }}>
             <span style={{ fontSize: 11, color: "#555" }}>{currentProfile?.email || currentUser?.email}</span>
-            {pushPermission === "default" && (
-              <button
-                className="btn btn-ghost"
-                style={{ fontSize: 11, color: "rgba(255,255,255,0.7)", border: "1px solid rgba(255,255,255,0.25)" }}
-                onClick={() => activarNotificaciones(currentUser.id)}
-                title="Recibe una notificación en el teléfono cada vez que llegue un mensaje nuevo"
-              >🔔 Activar notificaciones</button>
-            )}
+            <button
+              className="btn btn-ghost"
+              style={{ fontSize: 11, color: "rgba(255,255,255,0.7)", border: "1px solid rgba(255,255,255,0.25)" }}
+              onClick={() => activarNotificaciones(currentUser?.id)}
+              title={pushTitle}
+            >{pushLabel}</button>
             <button className="btn btn-ghost" style={{ fontSize: 11, color: "rgba(255,255,255,0.7)", border: "1px solid rgba(255,255,255,0.25)" }} onClick={() => setShowAyuda(true)}>? Ayuda</button>
             <button className="btn btn-primary" onClick={() => setShowForm(true)}>+ NUEVO LEAD</button>
           </div>
@@ -1761,14 +1809,13 @@ export default function CRM() {
                 {item.label}
               </button>
             ))}
-            {pushPermission === "default" && (
-              <button
-                className="nav-btn"
-                onClick={() => { activarNotificaciones(currentUser.id); setMobileMenuOpen(false); }}
-              >
-                🔔 Activar notificaciones
-              </button>
-            )}
+            <button
+              className="nav-btn"
+              title={pushTitle}
+              onClick={() => { activarNotificaciones(currentUser?.id); setMobileMenuOpen(false); }}
+            >
+              {pushLabel}
+            </button>
           </div>
         )}
       </div>
@@ -2345,10 +2392,10 @@ export default function CRM() {
             setSelectedConv={setSelectedConv}
             confirmReturnToBotIfNeeded={confirmReturnToBotIfNeeded}
             fetchConvMessages={fetchConvMessages}
-            setAgentMessage={setAgentMessage}
             setView={setView}
             setSelectedLead={setSelectedLead}
             leads={leads}
+            leadsById={leadsById}
             vendedores={vendedores}
             getConversationBadgeStyle={getConversationBadgeStyle}
             getModeLabel={getModeLabel}
@@ -2358,7 +2405,6 @@ export default function CRM() {
             setHumanMode={setHumanMode}
             setConvVisto={setConvVisto}
             convMessages={convMessages}
-            agentMessage={agentMessage}
             sendAgentReply={sendAgentReply}
             sendingAgent={sendingAgent}
             sendReactivacion={sendReactivacion}
