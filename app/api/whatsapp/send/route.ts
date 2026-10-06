@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import twilio from 'twilio'
-import { createServiceRoleClient } from '@/utils/supabase/server'
+import { createClient, createServiceRoleClient } from '@/utils/supabase/server'
 import {
   getMetaConfig,
   getTwilioConfig,
@@ -38,7 +38,34 @@ async function actualizarStageSiCotizacion(
   }
 }
 
+// Este endpoint manda WhatsApp desde el número de Anaxágoras: antes no pedía
+// ninguna autenticación. Ahora exige sesión del CRM (asesor/admin) o el
+// CRON_SECRET para envíos internos por script. Mismo cierre que windsorcrm.
+function verifyInternalSecret(request: Request): boolean {
+  const secret = process.env.CRON_SECRET?.replace(/\\n$/, '').trim()
+  if (!secret) return false
+  const auth = request.headers.get('authorization')
+  if (auth?.startsWith('Bearer ')) return auth.slice(7).trim() === secret
+  return request.headers.get('x-cron-secret') === secret
+}
+
+async function estaAutorizado(request: Request): Promise<boolean> {
+  if (verifyInternalSecret(request)) return true
+  try {
+    const supabase = await createClient()
+    const {
+      data: { user },
+    } = await supabase.auth.getUser()
+    return !!user
+  } catch {
+    return false
+  }
+}
+
 export async function POST(request: Request) {
+  if (!(await estaAutorizado(request))) {
+    return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
+  }
   try {
     const { to, body, leadId, agentUserId, fase } = (await request.json()) as {
       to?: string
