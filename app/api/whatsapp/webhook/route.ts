@@ -913,6 +913,37 @@ export async function POST(request: Request) {
 
       if (convError) console.error('[webhook] conv insert error:', convError)
       convId = newConv?.id
+
+      // Cuando alguien manda varios mensajes seguidos, Meta entrega los webhooks
+      // casi al mismo tiempo: todos buscan conversación abierta antes de que
+      // exista y cada uno crea la suya (caso +525638435656, 6-oct: 3 mensajes →
+      // 3 conversaciones y 3 bienvenidas). Después de crear, solo la conversación
+      // más antigua se queda; las demás se borran, su mensaje se guarda en la
+      // primera y no se manda otra bienvenida (la primera ya la está mandando).
+      if (convId) {
+        const { data: primera } = await supabase
+          .from('whatsapp_conversaciones')
+          .select('id')
+          .eq('whatsapp', from)
+          .eq('estado', 'abierta')
+          .order('created_at', { ascending: true })
+          .order('id', { ascending: true })
+          .limit(1)
+          .maybeSingle()
+        if (primera?.id && primera.id !== convId) {
+          await supabase.from('whatsapp_conversaciones').delete().eq('id', convId)
+          await supabase.from('whatsapp_mensajes').insert([{
+            conversacion_id: primera.id,
+            rol: 'usuario',
+            contenido: text,
+            raw_payload: rawPayload,
+          }])
+          await supabase.from('whatsapp_conversaciones')
+            .update({ ultimo_mensaje_at: new Date().toISOString() })
+            .eq('id', primera.id)
+          return Response.json({ ok: true, duplicada_fusionada: true })
+        }
+      }
     }
 
     // Loguear mensaje del usuario
