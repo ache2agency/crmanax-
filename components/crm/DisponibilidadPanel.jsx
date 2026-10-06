@@ -111,6 +111,10 @@ export default function DisponibilidadPanel() {
     <div style={{
       background: "#fff", border: "1px solid #e5e7eb", borderRadius: 8,
       display: "flex", flexDirection: "column", flex: 1, minHeight: 0,
+      // En celular el panel crecía al ancho de la tabla (31 días) y se cortaba en
+      // el día ~10 sin poder desplazarse: se limita al ancho de la pantalla para
+      // que el scroll horizontal sea de la tabla.
+      width: "100%", maxWidth: "100vw", minWidth: 0,
       overflow: "hidden", fontFamily: "'DM Mono', monospace",
     }}>
       <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 16px", borderBottom: "1px solid #e5e7eb", flexShrink: 0, flexWrap: "wrap" }}>
@@ -161,7 +165,7 @@ export default function DisponibilidadPanel() {
         <div style={{ padding: "10px 16px", background: "#fef2f2", color: "#991b1b", fontSize: 12 }}>{error}</div>
       )}
 
-      <div style={{ flex: 1, overflow: "auto" }}>
+      <div style={{ flex: 1, overflowX: "auto", overflowY: "auto", minWidth: 0, maxWidth: "100%", WebkitOverflowScrolling: "touch" }}>
         {loading ? (
           <div style={{ padding: 24, color: "#9ca3af", fontSize: 13 }}>Cargando disponibilidad...</div>
         ) : (
