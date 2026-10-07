@@ -16,10 +16,13 @@ import {
   formatFecha,
   hoyISO,
   pareceInterrogacion,
+  sumarMesesISO,
   sumarDiasISO,
   type Duracion,
 } from '@/lib/whatsapp/bot-parsers'
 import { barridoSeguimientosOportunista } from '@/lib/whatsapp/seguimiento'
+import { loftsDisponibles } from '@/lib/disponibilidad'
+import { resolverDisponibilidadFase2 } from '@/lib/whatsapp/fase2-disponibilidad'
 
 const ADMIN_WHATSAPP_NUMBERS = (process.env.ALERT_WHATSAPP_NUMBER || '+525534815126,+527471028306')
   .split(',')
@@ -430,7 +433,9 @@ const MSG = {
     `¡Hola! 👋 Con gusto te comparto toda la información sobre nuestros lofts en *Anaxágoras 41*. Para darte una atención más personalizada, ¿me puedes decir tu nombre?`,
 
   saludo: (nombre: string) =>
-    `Mucho gusto, *${nombre}*! 😊\n\nEstamos ubicados en Piedad Narvarte, Benito Juárez, CDMX. Estos son nuestros lofts:\n\n🛏 *Loft Chico* (~16 m², 1 persona)\n• Por noche: $700 MXN\n• Mensual: $12,000 MXN\n\n🛏 *Loft Mediano* (~24 m², 1-2 personas)\n• Por noche: $800 MXN\n• Mensual 1 persona: $14,000 MXN\n• Mensual 2 personas: $16,000 MXN\n\n🛏 *Loft Grande* (~32 m², hasta 2 personas)\n• Por noche: $900 MXN\n• Mensual 1 persona: $16,000 MXN\n• Mensual 2 personas: $18,000 MXN\n\n_Todos incluyen agua, luz, gas, internet (150 Mbps), Smart TV, área de cocina, limpieza semanal y cerradura inteligente._\n\n📸 Puedes ver fotos de cada loft aquí: https://anaxagoras41suite.arqarri.com/\n\n¿Qué tipo de renta te interesa?\n\n1️⃣ *Por noche*\n2️⃣ *Por mes*`,
+    `Mucho gusto, *${nombre}*! 😊\n\nEstamos ubicados en Piedad Narvarte, Benito Juárez, CDMX. Estos son nuestros lofts:\n\n` +
+    MSG.precios().replace('*Tarifas Anaxágoras 41:*\n\n', '').replace('_Todos incluyen agua, luz, gas, internet, limpieza semanal y cambio de blancos._', '_Todos incluyen agua, luz, gas, internet (150 Mbps), Smart TV, área de cocina, limpieza semanal y cerradura inteligente._') +
+    `\n\n📸 Puedes ver fotos de cada loft aquí: https://anaxagoras41suite.arqarri.com/\n\n¿Te interesa alguna opción? Responde *sí* y te pido tus fechas para revisar disponibilidad.`,
 
   pedirTipoRenta: () =>
     `¿Qué tipo de renta te interesa?\n\n1️⃣ *Por noche*\n2️⃣ *Por mes*`,
@@ -502,6 +507,9 @@ const MSG = {
   errorConfirmarInteres: () =>
     `¿Me confirmas si te interesa ese rango de precio? Responde *sí* o *no* 🙏`,
 
+  errorConfirmarPrecios: () =>
+    `¿Te interesa alguna de estas opciones? Responde *sí* para revisar fechas y disponibilidad estimada, o *no* si por ahora no te funciona. 🙏`,
+
   cierreNoInteresado: () =>
     `Entendido, gracias por tu tiempo 🙏 Si más adelante buscas algo en otro rango, aquí estamos.`,
 
@@ -544,6 +552,12 @@ const MSG = {
 
   fotos: () =>
     `📸 Aquí puedes ver fotos de las instalaciones y los lofts: https://anaxagoras41suite.arqarri.com/`,
+
+  pedirDatosDisponibilidad: () =>
+    `Perfecto 🙌 Para revisar disponibilidad estimada, compárteme:\n\n📅 Fecha de llegada\n📅 Fecha de salida (o dime si buscas renta mensual desde cierta fecha)\n👥 Número de personas\n\nEjemplo: *llegada ${ejemploFecha(14)}, salida ${ejemploFecha(18)}, 2 personas*`,
+
+  disponibilidadSinFechas: () =>
+    `Con gusto reviso cuáles tenemos disponibles 🙂\n\nPara consultarlo necesito tus fechas y número de personas. Mándame, por ejemplo:\n\n*llegada ${ejemploFecha(14)}, salida ${ejemploFecha(18)}, 2 personas*\n\nSi buscas renta mensual, puedes decirme: *renta mensual desde ${ejemploFecha(14)} para 1 persona*.`,
 }
 
 // ─── FAQ detector ─────────────────────────────────────────────────────────────
@@ -583,7 +597,13 @@ function flowReminder(fase: string | null): string {
   if (fase === 'personas') return `\n\n${MSG.pedirPersonas()}`
   if (fase === 'tipo_loft') return `\n\n_Elige el tipo de loft respondiendo *1* o *2*._`
   if (fase === 'confirmar_interes') return `\n\n¿Te interesa el rango de precio? Responde *sí* o *no*.`
+  if (fase === 'confirmar_precios') return `\n\n¿Te interesa alguna opción? Responde *sí* para revisar disponibilidad.`
   return ''
+}
+
+function preguntaDisponibilidad(textLower: string): boolean {
+  return /\b(disponible|disponibles|disponibilidad|tienes|tienen|hay)\b/.test(textLower) &&
+    /\b(cual|cu[aá]l|cuales|cu[aá]les|que|qu[eé]|loft|lofts|habitaci[oó]n|opci[oó]n|opciones|fecha|fechas)\b/.test(textLower)
 }
 
 // Si el bot ya le repitió el mismo error una vez en este paso y el lead
@@ -678,6 +698,20 @@ async function manejarFaseFecha(
     duracionPendiente = extraerFechas(ultimoBot.slice(PREFIJO_DURACION.length).split('*')[0], hoy).duracion
   }
 
+  const fechasExtraidas = extraerFechas(text, hoy)
+  if (fase === 'checkin' && /\b(mensual|por mes|renta mensual|mes completo)\b/i.test(text) && fechasExtraidas.fechas.length === 1) {
+    const checkin = fechasExtraidas.fechas[0]
+    const checkout = sumarMesesISO(checkin, 1)
+    if (leadId) await supabase.from('leads').update({ fecha_checkin: checkin, fecha_checkout: checkout }).eq('id', leadId)
+    return {
+      response:
+        `Llegada: *${formatFecha(checkin)}* ✅\n` +
+        `Salida estimada para renta mensual: *${formatFecha(checkout)}* ✅\n\n` +
+        MSG.pedirPersonas(),
+      nextFase: 'personas',
+    }
+  }
+
   const escalar = async (alerta: string, response: string) => {
     await alertarAdmin(`${alerta}\n\n📱 *WhatsApp:* ${from}\n💬 *Último mensaje:* "${text}"\n\nContactar directamente.`)
     return { response, nextFase: 'esperando_asesor' }
@@ -714,6 +748,7 @@ async function manejarFaseFecha(
       if (tipo === 'sin_fecha_definida') return escalar(`📅 *Lead sin fecha de ${cual} definida*`, MSG.sinFechaDefinida())
       if (tipo === 'quiere_humano') return escalar('🙋 *Lead pide atención de una persona*', MSG.escalarFecha())
       if (tipo === 'info') return { response: MSG.precios() + flowReminder(fase), nextFase: fase }
+      if (tipo === 'pregunta' && preguntaDisponibilidad(text.toLowerCase())) return { response: MSG.disponibilidadSinFechas(), nextFase: fase }
       if (yaFalloAntes) return atorado()
       if (tipo === 'pregunta') return { response: MSG.errorFechaPregunta(cual), nextFase: fase }
       if (tipo === 'cortesia') return { response: MSG.cortesiaFecha(cual), nextFase: fase }
@@ -906,7 +941,7 @@ export async function POST(request: Request) {
           whatsapp: from,
           lead_id: leadId,
           estado: 'abierta',
-          fase: 'saludo',
+          fase: 'nombre',
         }])
         .select('id')
         .maybeSingle()
@@ -1002,6 +1037,11 @@ export async function POST(request: Request) {
         nextFase = 'esperando_asesor'
       }
 
+    // Preguntas de disponibilidad sin fechas: no contestar "No pude entender esa fecha".
+    } else if (fase && preguntaDisponibilidad(textLower) && !traeFecha) {
+      response = MSG.disponibilidadSinFechas()
+      nextFase = fase
+
     // FAQ: responde preguntas sin romper el flujo de reserva
     } else if (fase && detectFaq(textLower) && !traeFecha) {
       const faq = detectFaq(textLower)!
@@ -1017,8 +1057,8 @@ export async function POST(request: Request) {
       const nombreDetectado = extraerNombreDeAnuncio(text)
       if (nombreDetectado) {
         if (leadId) await supabase.from('leads').update({ nombre: nombreDetectado }).eq('id', leadId)
-        response = `Mucho gusto, *${nombreDetectado}*! 😊\n\n` + MSG.pedirCheckin()
-        nextFase = 'checkin'
+        response = MSG.saludo(nombreDetectado)
+        nextFase = 'confirmar_precios'
       } else {
         response = MSG.bienvenida()
         nextFase = 'nombre'
@@ -1043,8 +1083,25 @@ export async function POST(request: Request) {
         }
       } else {
         if (leadId) await supabase.from('leads').update({ nombre }).eq('id', leadId)
-        response = `Mucho gusto, *${nombre}*! 😊\n\n` + MSG.pedirCheckin()
+        response = MSG.saludo(nombre)
+        nextFase = 'confirmar_precios'
+      }
+
+    } else if (fase === 'confirmar_precios') {
+      if (esRespuestaAfirmativa(textLower)) {
+        response = MSG.pedirDatosDisponibilidad()
         nextFase = 'checkin'
+      } else if (esRespuestaNegativa(textLower)) {
+        if (leadId) await supabase.from('leads').update({ stage: 'no_interesado' }).eq('id', leadId)
+        response = MSG.cierreNoInteresado()
+        nextFase = 'no_interesado'
+        cerrarConversacion = true
+      } else if (detectFaq(textLower) === 'precios') {
+        response = MSG.precios() + flowReminder('confirmar_precios')
+        nextFase = 'confirmar_precios'
+      } else {
+        response = MSG.errorConfirmarPrecios()
+        nextFase = 'confirmar_precios'
       }
 
     // Fase "tipo_renta" — solo la usan conversaciones que ya venían de antes de
@@ -1087,34 +1144,17 @@ export async function POST(request: Request) {
           await supabase.from('leads').update({ num_personas: num, tipo_renta: tipoRenta, stage: 'cotizado' }).eq('id', leadId)
         }
 
-        const rango = calcularRangoPrecio(tipoRenta, num, noches)
-
-        if (!rango) {
-          // Excepción real, no una limitación nuestra: el catálogo actual no
-          // tiene ningún loft para más de 2 personas (Grande = hasta 2), así
-          // que no hay rango que calcular. Se mantiene el comportamiento
-          // anterior — avisar al asesor de inmediato, sin pasar por el filtro
-          // de confirmación de precio (no aplica: no hay precio que confirmar).
-          response =
-            `¡Perfecto, *${nombreLead}*! 🙌 Ya tengo tus datos:\n\n` +
-            `📅 *Llegada:* ${formatFecha(checkin)}\n` +
-            `📅 *Salida:* ${formatFecha(checkout)}\n` +
-            `👥 *Personas:* ${num}\n\n` +
-            `Un asesor verificará la disponibilidad y se pondrá en contacto contigo en breve. 😊`
-          nextFase = 'esperando_asesor'
-          await alertarAdmin(
-            `🆕 *Lead listo — verificar disponibilidad*\n\n` +
-            `👤 *Nombre:* ${nombreLead}\n` +
-            `📱 *WhatsApp:* ${from}\n` +
-            `📅 *Llegada:* ${formatFecha(checkin)}\n` +
-            `📅 *Salida:* ${formatFecha(checkout)}\n` +
-            `👥 *Personas:* ${num}\n\n` +
-            `Contactar para confirmar disponibilidad y cerrar.`
-          )
-        } else {
-          response = MSG.rangoPrecio(nombreLead, tipoRenta, rango)
-          nextFase = 'confirmar_interes'
-        }
+        const resultadoDisponibilidad = await resolverDisponibilidadFase2({
+          nombre: nombreLead,
+          whatsapp: from,
+          checkin,
+          checkout,
+          personas: num,
+          consultar: loftsDisponibles,
+        })
+        response = resultadoDisponibilidad.response
+        nextFase = 'esperando_asesor'
+        await alertarAdmin(resultadoDisponibilidad.alerta)
       }
 
     } else if (fase === 'confirmar_interes') {
