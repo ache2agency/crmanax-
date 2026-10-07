@@ -433,8 +433,9 @@ const MSG = {
     `¡Hola! 👋 Con gusto te comparto toda la información sobre nuestros lofts en *Anaxágoras 41*. Para darte una atención más personalizada, ¿me puedes decir tu nombre?`,
 
   saludo: (nombre: string) =>
-    `Mucho gusto, *${nombre}*! 😊\n\n` + MSG.precios() +
-    `\n\n📸 Puedes ver fotos de cada loft aquí: https://anaxagoras41suite.arqarri.com/\n\n¿Te interesa alguna opción? Responde *sí* y te pido fechas/personas para revisar disponibilidad estimada.`,
+    `Mucho gusto, *${nombre}*! 😊\n\nEstamos ubicados en Piedad Narvarte, Benito Juárez, CDMX. Estos son nuestros lofts:\n\n` +
+    MSG.precios().replace('*Tarifas Anaxágoras 41:*\n\n', '').replace('_Todos incluyen agua, luz, gas, internet, limpieza semanal y cambio de blancos._', '_Todos incluyen agua, luz, gas, internet (150 Mbps), Smart TV, área de cocina, limpieza semanal y cerradura inteligente._') +
+    `\n\n📸 Puedes ver fotos de cada loft aquí: https://anaxagoras41suite.arqarri.com/\n\n¿Te interesa alguna opción? Responde *sí* y te pido tus fechas para revisar disponibilidad.`,
 
   pedirTipoRenta: () =>
     `¿Qué tipo de renta te interesa?\n\n1️⃣ *Por noche*\n2️⃣ *Por mes*`,

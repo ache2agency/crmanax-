@@ -166,7 +166,7 @@ export async function resolverDisponibilidadFase2({
       `¡Sí tenemos disponibilidad estimada! 🙌\n\n` +
       `Para *${personas} persona${personas !== 1 ? 's' : ''}* del *${formatFecha(checkin)}* al *${formatFecha(checkout)}*, aparece disponible un *${tipoTexto}*.\n\n` +
       `💰 *Total estimado:* ${total}\n\n` +
-      `Un asesor confirma la disponibilidad en el Excel y te ayuda a apartar. El calendario se sincroniza 5 veces al día, así que la confirmación final la hace el asesor.`
+      `Un asesor te confirma la disponibilidad y te ayuda a apartar. 🙌`
     const alerta =
       `🆕 *Lead con disponibilidad estimada*\n\n` +
       `👤 *Nombre:* ${nombre}\n` +
@@ -193,7 +193,7 @@ export async function resolverDisponibilidadFase2({
   const response =
     `Por ahora no veo disponibilidad estimada para *${personas} persona${personas !== 1 ? 's' : ''}* del *${formatFecha(checkin)}* al *${formatFecha(checkout)}*. 😕\n\n` +
     `${alternativa}\n\n` +
-    `De todos modos, un asesor confirma la disponibilidad en el Excel y te puede proponer opciones. El calendario se sincroniza 5 veces al día.`
+    `De todos modos, un asesor te contacta para confirmar y proponerte opciones.`
   const alerta =
     `🟠 *Lead sin disponibilidad estimada*\n\n` +
     `👤 *Nombre:* ${nombre}\n` +

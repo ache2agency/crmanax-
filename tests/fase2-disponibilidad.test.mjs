@@ -46,7 +46,7 @@ test('fase 2: con disponibilidad elige loft adecuado, total y escala a asesor', 
   assert.equal(r.ok, true)
   assert.match(r.response, /Loft Mediano/)
   assert.match(r.response, /\$2,400 MXN/)
-  assert.match(r.response, /asesor confirma/)
+  assert.match(r.response, /asesor te (confirma|contacta)/)
   assert.match(r.alerta, /Lead con disponibilidad estimada/)
   assert.match(r.alerta, /Total estimado/)
 })
