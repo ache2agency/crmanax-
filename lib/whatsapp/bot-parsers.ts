@@ -412,6 +412,98 @@ export function extraerNombre(text: string): string | null {
   return esNombreValido(limpio) ? limpio : null
 }
 
+// ─── Desinterés explícito ─────────────────────────────────────────────────────
+
+/**
+ * El lead dice claramente que no le interesa, en CUALQUIER fase del flujo.
+ * Antes solo se revisaba en 3 fases y solo si el mensaje empezaba con "no",
+ * así que "Sale de mi presupuesto" (+527331158172) o "Hola buen día no muchas
+ * gracias" (+525567712598) seguían recibiendo preguntas del flujo (9-oct-2026).
+ * Frases de precio con "?" no cuentan: "¿está caro el mensual?" es pregunta.
+ */
+export function esDesinteres(text: string): boolean {
+  const t = normalizar(text).trim()
+  if (/\b(ya )?no (me|nos) interesa|\bno (estoy|estamos) interesad|\bya no (estoy|estamos) interesad/.test(t)) return true
+  if (/(^|[\s,.!])no,? (muchas |mil )?gracias\b/.test(t)) return true
+  if (/\b(ya no|no) (me |nos )?(escriban|escribas|manden|envien|contacten)\b|\bdejen de (escribir|mandar|enviar)/.test(t)) return true
+  if (/\bya (encontre|encontramos|rente|rentamos|consegui|conseguimos|reserve en otro|tengo (lugar|donde))\b/.test(t)) return true
+  if (/^no me sirve\b|\bno nos sirve\b|\bya no (lo )?(necesito|ocupo|requiero)\b/.test(t)) return true
+  if (!/[?¿]/.test(t) && (
+    /\b(fuera de|sale de|se sale de|(se )?excede|rebasa|supera|arriba de|mas alto que) (de )?(mi|nuestro) presupuesto/.test(t) ||
+    /\b(muy|demasiado|un poco|algo) car[oa]s?\b|\bno me alcanza\b/.test(t)
+  )) return true
+  return false
+}
+
+/**
+ * "No" como respuesta a una pregunta de sí/no del flujo (confirmar precios,
+ * confirmar interés, esperando asesor). Antes bastaba con que el mensaje
+ * EMPEZARA con "no", así que "No tengo fecha aún" o "No me has dado precio"
+ * contaban como rechazo.
+ */
+export function esRespuestaNegativa(text: string): boolean {
+  const t = normalizar(text).trim().replace(/[.!¡]+$/g, '').trim()
+  if (esDesinteres(text)) return true
+  return /^(no|nop|nel|no por ahora|no por el momento|ahorita no|por ahora no|de momento no|no,? ya no|ya no)$/.test(t) ||
+    /^no,? (me|nos) (convence|convencio|queda|quedo|funciona|acomoda)\b/.test(t)
+}
+
+// ─── Lead sin respuesta 48 h → No interesado ──────────────────────────────────
+//
+// Sin columnas nuevas en el Kanban (decisión de Harold, 9-oct-2026): quien
+// lleva 48 h sin contestar pasa a no_interesado, pero su conversación se queda
+// ABIERTA y en la fase en la que iba. Así se distingue de un rechazo real
+// (conversación cerrada, fase no_interesado) y si vuelve a escribir regresa a
+// su columna.
+
+export const HORAS_SIN_RESPUESTA = 48
+
+// Solo las primeras etapas; en deposito_pendiente en adelante ya lo lleva un asesor.
+export const STAGES_SIN_RESPUESTA = ['nuevo_contacto', 'cotizado']
+
+// Fases en las que el lead espera a un humano: si no contesta es porque nadie
+// lo atendió — no se descartan.
+export const FASES_QUE_ESPERAN_HUMANO = ['esperando_asesor', 'confirmado', 'no_interesado']
+
+/**
+ * Se descarta si lleva 48 h sin contestar y el último mensaje fue NUESTRO
+ * (bot o asesor). Si el último que escribió fue el lead, la pelota está de
+ * nuestro lado y no se toca.
+ */
+export function debeDescartarPorSinRespuesta(params: {
+  stage: string | null | undefined
+  fase: string | null | undefined
+  modoHumano: boolean
+  ultimoRol: string | null | undefined
+  ultimoMensajeAt: string | null | undefined
+  ahora: Date
+}): boolean {
+  if (!params.stage || !STAGES_SIN_RESPUESTA.includes(params.stage)) return false
+  if (params.fase && FASES_QUE_ESPERAN_HUMANO.includes(params.fase)) return false
+  if (params.modoHumano) return false
+  if (!params.ultimoRol || params.ultimoRol === 'usuario') return false
+  if (!params.ultimoMensajeAt) return false
+  const horas = (params.ahora.getTime() - new Date(params.ultimoMensajeAt).getTime()) / 3_600_000
+  return horas >= HORAS_SIN_RESPUESTA
+}
+
+/**
+ * El lead está en no_interesado solo por no contestar (no lo rechazó): su
+ * conversación sigue abierta y no está en fase no_interesado.
+ */
+export function descartadoPorSinRespuesta(params: {
+  stage: string | null | undefined
+  fase: string | null | undefined
+  estado: string | null | undefined
+}): boolean {
+  return params.stage === 'no_interesado' && params.estado === 'abierta' && params.fase !== 'no_interesado'
+}
+
+/** Al volver a escribir regresa a la columna que le toca. */
+export function stageAlRegresar(numPersonas: number | null | undefined): string {
+  return numPersonas ? 'cotizado' : 'nuevo_contacto'
+}
+
 // ─── Lead descartado que vuelve a escribir ────────────────────────────────────
 
 const DIAS_RETOMAR_DESCARTADO = 14
