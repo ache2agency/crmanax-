@@ -1,5 +1,5 @@
 import { createServiceRoleClient } from '@/utils/supabase/server'
-import { enviarSeguimientos, marcarLeadsFrios } from '@/lib/whatsapp/seguimiento'
+import { enviarSeguimientos, descartarLeadsSinRespuesta } from '@/lib/whatsapp/seguimiento'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -22,9 +22,9 @@ async function handler(request: Request) {
 
   const supabase = createServiceRoleClient()
   const seguimientosEnviados = await enviarSeguimientos(supabase)
-  const leadsFrios = await marcarLeadsFrios(supabase)
+  const descartadosSinRespuesta = await descartarLeadsSinRespuesta(supabase)
 
-  return Response.json({ ok: true, seguimientosEnviados, leadsFrios })
+  return Response.json({ ok: true, seguimientosEnviados, descartadosSinRespuesta })
 }
 
 export async function GET(request: Request) {

@@ -6,11 +6,10 @@ import {
   SEGUIMIENTO_MIN_HORAS,
   SEGUIMIENTO_MAX_HORAS,
   esHorarioDeSeguimiento,
-  debePasarAFrio,
-  STAGE_FRIO,
-  STAGES_QUE_SE_ENFRIAN,
-  FASES_QUE_NO_SE_ENFRIAN,
-  HORAS_PARA_FRIO,
+  debeDescartarPorSinRespuesta,
+  STAGES_SIN_RESPUESTA,
+  FASES_QUE_ESPERAN_HUMANO,
+  HORAS_SIN_RESPUESTA,
 } from '@/lib/whatsapp/bot-parsers'
 
 export const MENSAJE_SEGUIMIENTO = '¿Te quedó alguna duda sobre los lofts de Anaxágoras 41? Con gusto te ayudamos. 😊'
@@ -107,18 +106,18 @@ export async function enviarSeguimientos(
 }
 
 /**
- * Mueve a "Frío" a los leads de nuevo_contacto/cotizado que llevan 48 h sin
- * contestar después de nuestro último mensaje (bot o asesor). Si el lead
- * vuelve a escribir, el webhook lo regresa a su columna. Los que esperan a un
- * asesor (esperando_asesor/confirmado) no se tocan: ahí falta que alguien los
- * atienda, no que el lead conteste.
+ * Pasa a no_interesado a los leads de nuevo_contacto/cotizado que llevan 48 h
+ * sin contestar después de nuestro último mensaje (bot o asesor). La
+ * conversación se queda abierta: si el lead vuelve a escribir, el webhook lo
+ * regresa a su columna. Los que esperan a un asesor (esperando_asesor/
+ * confirmado) no se tocan: ahí falta que alguien los atienda.
  */
-export async function marcarLeadsFrios(
+export async function descartarLeadsSinRespuesta(
   supabase: Supabase,
   opts: { ahora?: Date; limite?: number } = {}
 ): Promise<number> {
   const ahora = opts.ahora ?? new Date()
-  const corte = new Date(ahora.getTime() - HORAS_PARA_FRIO * 3_600_000).toISOString()
+  const corte = new Date(ahora.getTime() - HORAS_SIN_RESPUESTA * 3_600_000).toISOString()
 
   const { data: convs } = await supabase
     .from('whatsapp_conversaciones')
@@ -126,7 +125,7 @@ export async function marcarLeadsFrios(
     .eq('estado', 'abierta')
     .eq('modo_humano', false)
     .not('lead_id', 'is', null)
-    .not('fase', 'in', `(${FASES_QUE_NO_SE_ENFRIAN.join(',')})`)
+    .not('fase', 'in', `(${FASES_QUE_ESPERAN_HUMANO.join(',')})`)
     .lte('ultimo_mensaje_at', corte)
     .order('ultimo_mensaje_at', { ascending: false })
     .limit(500)
@@ -141,7 +140,7 @@ export async function marcarLeadsFrios(
       .from('leads')
       .select('id, stage')
       .in('id', leadIds.slice(i, i + 100))
-      .in('stage', STAGES_QUE_SE_ENFRIAN)
+      .in('stage', STAGES_SIN_RESPUESTA)
     for (const l of (leads || []) as { id: string; stage: string }[]) stagePorLead.set(l.id, l.stage)
   }
 
@@ -159,7 +158,7 @@ export async function marcarLeadsFrios(
       .order('created_at', { ascending: false })
       .limit(1)
       .maybeSingle()
-    if (!debePasarAFrio({
+    if (!debeDescartarPorSinRespuesta({
       stage,
       fase: conv.fase,
       modoHumano: conv.modo_humano,
@@ -169,11 +168,21 @@ export async function marcarLeadsFrios(
     })) continue
     const { data: movido } = await supabase
       .from('leads')
-      .update({ stage: STAGE_FRIO })
+      .update({ stage: 'no_interesado' })
       .eq('id', conv.lead_id)
       .eq('stage', stage)
       .select('id')
-    if (movido && movido.length > 0) marcados++
+    if (movido && movido.length > 0) {
+      marcados++
+      await supabase.from('lead_activities').insert([{
+        lead_id: conv.lead_id,
+        actor_id: null,
+        event_type: 'sin_respuesta_48h',
+        title: 'Sin respuesta 48 h → No interesado',
+        detail: `Estaba en ${stage}. Si vuelve a escribir regresa solo a su etapa.`,
+        meta: { source: 'bot', stage_anterior: stage },
+      }])
+    }
   }
   return marcados
 }
@@ -193,8 +202,8 @@ export async function barridoSeguimientosOportunista(supabase: Supabase): Promis
     console.error('[seguimiento] barrido oportunista falló:', e)
   }
   try {
-    await marcarLeadsFrios(supabase, { limite: 20 })
+    await descartarLeadsSinRespuesta(supabase, { limite: 20 })
   } catch (e) {
-    console.error('[seguimiento] barrido de fríos falló:', e)
+    console.error('[seguimiento] barrido sin respuesta falló:', e)
   }
 }

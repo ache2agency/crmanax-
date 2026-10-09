@@ -21,8 +21,8 @@ import {
   type Duracion,
   esDesinteres,
   esRespuestaNegativa,
-  STAGE_FRIO,
-  stageAlRegresarDeFrio,
+  descartadoPorSinRespuesta,
+  stageAlRegresar,
 } from '@/lib/whatsapp/bot-parsers'
 import { barridoSeguimientosOportunista } from '@/lib/whatsapp/seguimiento'
 import { loftsDisponibles } from '@/lib/disponibilidad'
@@ -142,7 +142,7 @@ async function manejarBotonReactivacion(
 
   const { data: conv } = await supabase
     .from('whatsapp_conversaciones')
-    .select('id, lead_id')
+    .select('id, lead_id, fase, estado')
     .eq('whatsapp', from)
     .order('ultimo_mensaje_at', { ascending: false })
     .limit(1)
@@ -172,9 +172,9 @@ async function manejarBotonReactivacion(
     await alertarAdmin(`🔴 *${nombre}* respondió que ya no le interesa (reactivación) — ${from}`)
   } else if (BOTONES_SIGUE_INTERESADO.has(botonLower)) {
     if (conv.lead_id) {
-      const { data: leadFrio } = await supabase.from('leads').select('stage, num_personas').eq('id', conv.lead_id).maybeSingle()
-      if (leadFrio?.stage === STAGE_FRIO) {
-        await supabase.from('leads').update({ stage: stageAlRegresarDeFrio(leadFrio.num_personas) }).eq('id', conv.lead_id)
+      const { data: leadPrevio } = await supabase.from('leads').select('stage, num_personas').eq('id', conv.lead_id).maybeSingle()
+      if (descartadoPorSinRespuesta({ stage: leadPrevio?.stage, fase: conv.fase, estado: conv.estado })) {
+        await supabase.from('leads').update({ stage: stageAlRegresar(leadPrevio?.num_personas) }).eq('id', conv.lead_id)
       }
     }
     await alertarAdmin(`🟢 *${nombre}* confirmó que SIGUE interesado (reactivación) — ${from}. Contactar para dar seguimiento real.`)
@@ -844,12 +844,12 @@ export async function POST(request: Request) {
       .limit(1)
       .maybeSingle()
 
-    // Lead en "Frío" (48 h sin contestar) que vuelve a escribir: regresa a la
-    // columna que le toca antes de seguir con el flujo.
+    // Lead que pasó a no_interesado solo por 48 h sin contestar (conversación
+    // abierta, no lo rechazó) y vuelve a escribir: regresa a su columna.
     if (conv?.lead_id) {
-      const { data: leadFrio } = await supabase.from('leads').select('stage, num_personas').eq('id', conv.lead_id).maybeSingle()
-      if (leadFrio?.stage === STAGE_FRIO) {
-        await supabase.from('leads').update({ stage: stageAlRegresarDeFrio(leadFrio.num_personas) }).eq('id', conv.lead_id)
+      const { data: leadPrevio } = await supabase.from('leads').select('stage, num_personas').eq('id', conv.lead_id).maybeSingle()
+      if (descartadoPorSinRespuesta({ stage: leadPrevio?.stage, fase: conv.fase, estado: 'abierta' })) {
+        await supabase.from('leads').update({ stage: stageAlRegresar(leadPrevio?.num_personas) }).eq('id', conv.lead_id)
       }
     }
 

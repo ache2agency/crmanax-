@@ -448,25 +448,29 @@ export function esRespuestaNegativa(text: string): boolean {
     /^no,? (me|nos) (convence|convencio|queda|quedo|funciona|acomoda)\b/.test(t)
 }
 
-// ─── Lead frío (48 h sin contestar) ──────────────────────────────────────────
+// ─── Lead sin respuesta 48 h → No interesado ──────────────────────────────────
+//
+// Sin columnas nuevas en el Kanban (decisión de Harold, 9-oct-2026): quien
+// lleva 48 h sin contestar pasa a no_interesado, pero su conversación se queda
+// ABIERTA y en la fase en la que iba. Así se distingue de un rechazo real
+// (conversación cerrada, fase no_interesado) y si vuelve a escribir regresa a
+// su columna.
 
-export const STAGE_FRIO = 'frio'
-export const HORAS_PARA_FRIO = 48
+export const HORAS_SIN_RESPUESTA = 48
 
-// Solo las primeras etapas pasan a frío; en deposito_pendiente en adelante ya
-// lo lleva un asesor.
-export const STAGES_QUE_SE_ENFRIAN = ['nuevo_contacto', 'cotizado']
+// Solo las primeras etapas; en deposito_pendiente en adelante ya lo lleva un asesor.
+export const STAGES_SIN_RESPUESTA = ['nuevo_contacto', 'cotizado']
 
 // Fases en las que el lead espera a un humano: si no contesta es porque nadie
-// lo atendió, no porque se enfrió — no se esconden en "Frío".
-export const FASES_QUE_NO_SE_ENFRIAN = ['esperando_asesor', 'confirmado', 'no_interesado']
+// lo atendió — no se descartan.
+export const FASES_QUE_ESPERAN_HUMANO = ['esperando_asesor', 'confirmado', 'no_interesado']
 
 /**
- * Pasa a frío si lleva 48 h sin contestar y el último mensaje fue NUESTRO
+ * Se descarta si lleva 48 h sin contestar y el último mensaje fue NUESTRO
  * (bot o asesor). Si el último que escribió fue el lead, la pelota está de
- * nuestro lado y no se enfría.
+ * nuestro lado y no se toca.
  */
-export function debePasarAFrio(params: {
+export function debeDescartarPorSinRespuesta(params: {
   stage: string | null | undefined
   fase: string | null | undefined
   modoHumano: boolean
@@ -474,17 +478,29 @@ export function debePasarAFrio(params: {
   ultimoMensajeAt: string | null | undefined
   ahora: Date
 }): boolean {
-  if (!params.stage || !STAGES_QUE_SE_ENFRIAN.includes(params.stage)) return false
-  if (params.fase && FASES_QUE_NO_SE_ENFRIAN.includes(params.fase)) return false
+  if (!params.stage || !STAGES_SIN_RESPUESTA.includes(params.stage)) return false
+  if (params.fase && FASES_QUE_ESPERAN_HUMANO.includes(params.fase)) return false
   if (params.modoHumano) return false
   if (!params.ultimoRol || params.ultimoRol === 'usuario') return false
   if (!params.ultimoMensajeAt) return false
   const horas = (params.ahora.getTime() - new Date(params.ultimoMensajeAt).getTime()) / 3_600_000
-  return horas >= HORAS_PARA_FRIO
+  return horas >= HORAS_SIN_RESPUESTA
 }
 
-/** Lead frío que vuelve a escribir: regresa a la columna que le toca. */
-export function stageAlRegresarDeFrio(numPersonas: number | null | undefined): string {
+/**
+ * El lead está en no_interesado solo por no contestar (no lo rechazó): su
+ * conversación sigue abierta y no está en fase no_interesado.
+ */
+export function descartadoPorSinRespuesta(params: {
+  stage: string | null | undefined
+  fase: string | null | undefined
+  estado: string | null | undefined
+}): boolean {
+  return params.stage === 'no_interesado' && params.estado === 'abierta' && params.fase !== 'no_interesado'
+}
+
+/** Al volver a escribir regresa a la columna que le toca. */
+export function stageAlRegresar(numPersonas: number | null | undefined): string {
   return numPersonas ? 'cotizado' : 'nuevo_contacto'
 }
 
@@ -519,7 +535,7 @@ export function debeRetomarConAsesor(params: {
 export const FASES_SIN_SEGUIMIENTO = ['esperando_asesor', 'confirmado', 'no_interesado']
 
 // Etapas del lead en las que ya lo lleva un humano o ya está descartado.
-export const STAGES_SIN_SEGUIMIENTO = ['no_interesado', 'frio', 'deposito_pendiente', 'reservado', 'hospedado', 'completado']
+export const STAGES_SIN_SEGUIMIENTO = ['no_interesado', 'deposito_pendiente', 'reservado', 'hospedado', 'completado']
 
 // Meta solo deja mandar texto libre dentro de las 24h desde el último mensaje
 // del lead: la ventana tiene que cerrar antes de eso.

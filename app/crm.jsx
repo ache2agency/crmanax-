@@ -18,7 +18,6 @@ const STAGES = [
   { id: "reservado",          label: "Reservado",           color: "#7c3aed", bg: "#f5f3ff" },
   { id: "hospedado",          label: "Hospedado",           color: "#0891b2", bg: "#ecfeff" },
   { id: "completado",         label: "Completado",          color: "#15803d", bg: "#f0fdf4" },
-  { id: "frio",               label: "Frío (48 h)"         , color: "#0ea5e9", bg: "#f0f9ff" },
   { id: "no_interesado",      label: "No interesado",       color: "#64748b", bg: "#f1f5f9" },
 ];
 
@@ -1313,7 +1312,6 @@ export default function CRM() {
     if (currentStage === "reservado")          return "Fechas bloqueadas. Verificar que la secuencia de mensajes esté programada.";
     if (currentStage === "hospedado")          return "Cliente hospedado. Estar al pendiente de cualquier necesidad.";
     if (currentStage === "completado")         return "Solicitar reseña en Google y procesar devolución del depósito de garantía.";
-    if (currentStage === "frio")               return "Lleva 48 h sin contestar. Si vuelve a escribir regresa solo a su etapa; si no, intentar un último mensaje.";
     if (currentStage === "no_interesado")      return "Revisar si conviene reactivar más adelante.";
     return "Actualizar siguiente paso comercial.";
   };

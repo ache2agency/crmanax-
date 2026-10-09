@@ -3,8 +3,9 @@ import assert from 'node:assert/strict'
 import {
   esDesinteres,
   esRespuestaNegativa,
-  debePasarAFrio,
-  stageAlRegresarDeFrio,
+  debeDescartarPorSinRespuesta,
+  descartadoPorSinRespuesta,
+  stageAlRegresar,
 } from '../lib/whatsapp/bot-parsers.ts'
 
 test('desinterés: casos reales que el bot no detectaba (9-oct-2026)', () => {
@@ -55,22 +56,26 @@ const base = {
   ahora: new Date('2026-10-09T12:00:00Z'),
 }
 
-test('frío: 48 h sin contestar después de nuestro mensaje', () => {
-  assert.equal(debePasarAFrio(base), true)
-  assert.equal(debePasarAFrio({ ...base, ultimoRol: 'agente' }), true)
-  assert.equal(debePasarAFrio({ ...base, ultimoMensajeAt: '2026-10-08T12:00:00Z' }), false) // 24 h
+test('sin respuesta: 48 h sin contestar después de nuestro mensaje', () => {
+  assert.equal(debeDescartarPorSinRespuesta(base), true)
+  assert.equal(debeDescartarPorSinRespuesta({ ...base, ultimoRol: 'agente' }), true)
+  assert.equal(debeDescartarPorSinRespuesta({ ...base, ultimoMensajeAt: '2026-10-08T12:00:00Z' }), false) // 24 h
 })
 
-test('frío: no se esconde a quien espera al asesor ni a quien escribió al último', () => {
-  assert.equal(debePasarAFrio({ ...base, ultimoRol: 'usuario' }), false)
-  assert.equal(debePasarAFrio({ ...base, fase: 'esperando_asesor' }), false)
-  assert.equal(debePasarAFrio({ ...base, fase: 'confirmado' }), false)
-  assert.equal(debePasarAFrio({ ...base, modoHumano: true }), false)
-  assert.equal(debePasarAFrio({ ...base, stage: 'deposito_pendiente' }), false)
-  assert.equal(debePasarAFrio({ ...base, stage: 'frio' }), false)
+test('sin respuesta: no se esconde a quien espera al asesor ni a quien escribió al último', () => {
+  assert.equal(debeDescartarPorSinRespuesta({ ...base, ultimoRol: 'usuario' }), false)
+  assert.equal(debeDescartarPorSinRespuesta({ ...base, fase: 'esperando_asesor' }), false)
+  assert.equal(debeDescartarPorSinRespuesta({ ...base, fase: 'confirmado' }), false)
+  assert.equal(debeDescartarPorSinRespuesta({ ...base, modoHumano: true }), false)
+  assert.equal(debeDescartarPorSinRespuesta({ ...base, stage: 'deposito_pendiente' }), false)
+  assert.equal(debeDescartarPorSinRespuesta({ ...base, stage: 'no_interesado' }), false)
 })
 
-test('frío: al volver a escribir regresa a su columna', () => {
-  assert.equal(stageAlRegresarDeFrio(2), 'cotizado')
-  assert.equal(stageAlRegresarDeFrio(null), 'nuevo_contacto')
+test('sin respuesta: al volver a escribir regresa; un rechazo real no', () => {
+  assert.equal(descartadoPorSinRespuesta({ stage: 'no_interesado', fase: 'checkin', estado: 'abierta' }), true)
+  assert.equal(descartadoPorSinRespuesta({ stage: 'no_interesado', fase: 'no_interesado', estado: 'cerrada' }), false)
+  assert.equal(descartadoPorSinRespuesta({ stage: 'no_interesado', fase: 'checkin', estado: 'cerrada' }), false)
+  assert.equal(descartadoPorSinRespuesta({ stage: 'cotizado', fase: 'checkin', estado: 'abierta' }), false)
+  assert.equal(stageAlRegresar(2), 'cotizado')
+  assert.equal(stageAlRegresar(null), 'nuevo_contacto')
 })
