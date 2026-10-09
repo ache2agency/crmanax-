@@ -19,6 +19,10 @@ import {
   sumarMesesISO,
   sumarDiasISO,
   type Duracion,
+  esDesinteres,
+  esRespuestaNegativa,
+  STAGE_FRIO,
+  stageAlRegresarDeFrio,
 } from '@/lib/whatsapp/bot-parsers'
 import { barridoSeguimientosOportunista } from '@/lib/whatsapp/seguimiento'
 import { loftsDisponibles } from '@/lib/disponibilidad'
@@ -167,6 +171,12 @@ async function manejarBotonReactivacion(
     await supabase.from('whatsapp_conversaciones').update({ estado: 'cerrada' }).eq('id', conv.id)
     await alertarAdmin(`🔴 *${nombre}* respondió que ya no le interesa (reactivación) — ${from}`)
   } else if (BOTONES_SIGUE_INTERESADO.has(botonLower)) {
+    if (conv.lead_id) {
+      const { data: leadFrio } = await supabase.from('leads').select('stage, num_personas').eq('id', conv.lead_id).maybeSingle()
+      if (leadFrio?.stage === STAGE_FRIO) {
+        await supabase.from('leads').update({ stage: stageAlRegresarDeFrio(leadFrio.num_personas) }).eq('id', conv.lead_id)
+      }
+    }
     await alertarAdmin(`🟢 *${nombre}* confirmó que SIGUE interesado (reactivación) — ${from}. Contactar para dar seguimiento real.`)
   } else {
     await alertarAdmin(`💬 *${nombre}* respondió el botón "${botonTexto}" (reactivación) — ${from}`)
@@ -266,11 +276,6 @@ function formatRangoPrecio(rango: { min: number; max: number }): string {
 function esRespuestaAfirmativa(textLower: string): boolean {
   const t = textLower.trim()
   return /^(s[ií]\b|claro|va\b|dale|adelante|de acuerdo|correcto|me interesa|s[ií] me interesa|quiero|por supuesto|ok(?:ay)?\b)/.test(t)
-}
-
-function esRespuestaNegativa(textLower: string): boolean {
-  const t = textLower.trim()
-  return /^no\b/.test(t) || /\bya no\b/.test(t)
 }
 
 function nombreLoft(loft: string): string {
@@ -839,6 +844,15 @@ export async function POST(request: Request) {
       .limit(1)
       .maybeSingle()
 
+    // Lead en "Frío" (48 h sin contestar) que vuelve a escribir: regresa a la
+    // columna que le toca antes de seguir con el flujo.
+    if (conv?.lead_id) {
+      const { data: leadFrio } = await supabase.from('leads').select('stage, num_personas').eq('id', conv.lead_id).maybeSingle()
+      if (leadFrio?.stage === STAGE_FRIO) {
+        await supabase.from('leads').update({ stage: stageAlRegresarDeFrio(leadFrio.num_personas) }).eq('id', conv.lead_id)
+      }
+    }
+
     // Si está en modo humano, solo loguear (el bot no responde, así que el push es la única alerta)
     if (conv?.modo_humano) {
       await supabase.from('whatsapp_mensajes').insert([{
@@ -1020,6 +1034,14 @@ export async function POST(request: Request) {
     } else if (retomadaConAsesor) {
       response = MSG.retomarConAsesor()
       nextFase = 'esperando_asesor'
+
+    // Desinterés explícito en CUALQUIER fase ("Sale de mi presupuesto", "no
+    // gracias", "ya no escriban"): se descarta y no se sigue con el flujo.
+    } else if (fase && fase !== 'no_interesado' && esDesinteres(text)) {
+      if (leadId) await supabase.from('leads').update({ stage: 'no_interesado' }).eq('id', leadId)
+      response = MSG.cierreNoInteresado()
+      nextFase = 'no_interesado'
+      cerrarConversacion = true
 
     // Ya se avisó una vez que un asesor la va a contactar — no insistir con
     // el flujo ni repetir el mensaje enlatado en cada mensaje que mande el

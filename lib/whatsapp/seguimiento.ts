@@ -6,6 +6,11 @@ import {
   SEGUIMIENTO_MIN_HORAS,
   SEGUIMIENTO_MAX_HORAS,
   esHorarioDeSeguimiento,
+  debePasarAFrio,
+  STAGE_FRIO,
+  STAGES_QUE_SE_ENFRIAN,
+  FASES_QUE_NO_SE_ENFRIAN,
+  HORAS_PARA_FRIO,
 } from '@/lib/whatsapp/bot-parsers'
 
 export const MENSAJE_SEGUIMIENTO = '¿Te quedó alguna duda sobre los lofts de Anaxágoras 41? Con gusto te ayudamos. 😊'
@@ -101,6 +106,78 @@ export async function enviarSeguimientos(
   return enviados
 }
 
+/**
+ * Mueve a "Frío" a los leads de nuevo_contacto/cotizado que llevan 48 h sin
+ * contestar después de nuestro último mensaje (bot o asesor). Si el lead
+ * vuelve a escribir, el webhook lo regresa a su columna. Los que esperan a un
+ * asesor (esperando_asesor/confirmado) no se tocan: ahí falta que alguien los
+ * atienda, no que el lead conteste.
+ */
+export async function marcarLeadsFrios(
+  supabase: Supabase,
+  opts: { ahora?: Date; limite?: number } = {}
+): Promise<number> {
+  const ahora = opts.ahora ?? new Date()
+  const corte = new Date(ahora.getTime() - HORAS_PARA_FRIO * 3_600_000).toISOString()
+
+  const { data: convs } = await supabase
+    .from('whatsapp_conversaciones')
+    .select('id, lead_id, fase, modo_humano, ultimo_mensaje_at')
+    .eq('estado', 'abierta')
+    .eq('modo_humano', false)
+    .not('lead_id', 'is', null)
+    .not('fase', 'in', `(${FASES_QUE_NO_SE_ENFRIAN.join(',')})`)
+    .lte('ultimo_mensaje_at', corte)
+    .order('ultimo_mensaje_at', { ascending: false })
+    .limit(500)
+
+  const candidatos = (convs || []) as { id: string; lead_id: string; fase: string | null; modo_humano: boolean; ultimo_mensaje_at: string }[]
+  if (candidatos.length === 0) return 0
+
+  const stagePorLead = new Map<string, string>()
+  const leadIds = candidatos.map((c) => c.lead_id)
+  for (let i = 0; i < leadIds.length; i += 100) {
+    const { data: leads } = await supabase
+      .from('leads')
+      .select('id, stage')
+      .in('id', leadIds.slice(i, i + 100))
+      .in('stage', STAGES_QUE_SE_ENFRIAN)
+    for (const l of (leads || []) as { id: string; stage: string }[]) stagePorLead.set(l.id, l.stage)
+  }
+
+  let marcados = 0
+  for (const conv of candidatos) {
+    if (marcados >= (opts.limite ?? 100)) break
+    const stage = stagePorLead.get(conv.lead_id)
+    if (!stage) continue
+    // Último mensaje real de la conversación (ultimo_mensaje_at no siempre
+    // cambia con los mensajes del bot o del asesor).
+    const { data: ultimo } = await supabase
+      .from('whatsapp_mensajes')
+      .select('rol, created_at')
+      .eq('conversacion_id', conv.id)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+    if (!debePasarAFrio({
+      stage,
+      fase: conv.fase,
+      modoHumano: conv.modo_humano,
+      ultimoRol: ultimo?.rol,
+      ultimoMensajeAt: ultimo?.created_at ?? conv.ultimo_mensaje_at,
+      ahora,
+    })) continue
+    const { data: movido } = await supabase
+      .from('leads')
+      .update({ stage: STAGE_FRIO })
+      .eq('id', conv.lead_id)
+      .eq('stage', stage)
+      .select('id')
+    if (movido && movido.length > 0) marcados++
+  }
+  return marcados
+}
+
 // Throttle por instancia para el barrido oportunista desde el webhook: como
 // mucho una consulta cada 10 min por instancia de la función.
 const INTERVALO_BARRIDO_MS = 10 * 60 * 1000
@@ -114,5 +191,10 @@ export async function barridoSeguimientosOportunista(supabase: Supabase): Promis
     await enviarSeguimientos(supabase, { limite: 20 })
   } catch (e) {
     console.error('[seguimiento] barrido oportunista falló:', e)
+  }
+  try {
+    await marcarLeadsFrios(supabase, { limite: 20 })
+  } catch (e) {
+    console.error('[seguimiento] barrido de fríos falló:', e)
   }
 }

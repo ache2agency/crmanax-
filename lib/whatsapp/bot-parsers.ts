@@ -412,6 +412,82 @@ export function extraerNombre(text: string): string | null {
   return esNombreValido(limpio) ? limpio : null
 }
 
+// ─── Desinterés explícito ─────────────────────────────────────────────────────
+
+/**
+ * El lead dice claramente que no le interesa, en CUALQUIER fase del flujo.
+ * Antes solo se revisaba en 3 fases y solo si el mensaje empezaba con "no",
+ * así que "Sale de mi presupuesto" (+527331158172) o "Hola buen día no muchas
+ * gracias" (+525567712598) seguían recibiendo preguntas del flujo (9-oct-2026).
+ * Frases de precio con "?" no cuentan: "¿está caro el mensual?" es pregunta.
+ */
+export function esDesinteres(text: string): boolean {
+  const t = normalizar(text).trim()
+  if (/\b(ya )?no (me|nos) interesa|\bno (estoy|estamos) interesad|\bya no (estoy|estamos) interesad/.test(t)) return true
+  if (/(^|[\s,.!])no,? (muchas |mil )?gracias\b/.test(t)) return true
+  if (/\b(ya no|no) (me |nos )?(escriban|escribas|manden|envien|contacten)\b|\bdejen de (escribir|mandar|enviar)/.test(t)) return true
+  if (/\bya (encontre|encontramos|rente|rentamos|consegui|conseguimos|reserve en otro|tengo (lugar|donde))\b/.test(t)) return true
+  if (/^no me sirve\b|\bno nos sirve\b|\bya no (lo )?(necesito|ocupo|requiero)\b/.test(t)) return true
+  if (!/[?¿]/.test(t) && (
+    /\b(fuera de|sale de|se sale de|(se )?excede|rebasa|supera|arriba de|mas alto que) (de )?(mi|nuestro) presupuesto/.test(t) ||
+    /\b(muy|demasiado|un poco|algo) car[oa]s?\b|\bno me alcanza\b/.test(t)
+  )) return true
+  return false
+}
+
+/**
+ * "No" como respuesta a una pregunta de sí/no del flujo (confirmar precios,
+ * confirmar interés, esperando asesor). Antes bastaba con que el mensaje
+ * EMPEZARA con "no", así que "No tengo fecha aún" o "No me has dado precio"
+ * contaban como rechazo.
+ */
+export function esRespuestaNegativa(text: string): boolean {
+  const t = normalizar(text).trim().replace(/[.!¡]+$/g, '').trim()
+  if (esDesinteres(text)) return true
+  return /^(no|nop|nel|no por ahora|no por el momento|ahorita no|por ahora no|de momento no|no,? ya no|ya no)$/.test(t) ||
+    /^no,? (me|nos) (convence|convencio|queda|quedo|funciona|acomoda)\b/.test(t)
+}
+
+// ─── Lead frío (48 h sin contestar) ──────────────────────────────────────────
+
+export const STAGE_FRIO = 'frio'
+export const HORAS_PARA_FRIO = 48
+
+// Solo las primeras etapas pasan a frío; en deposito_pendiente en adelante ya
+// lo lleva un asesor.
+export const STAGES_QUE_SE_ENFRIAN = ['nuevo_contacto', 'cotizado']
+
+// Fases en las que el lead espera a un humano: si no contesta es porque nadie
+// lo atendió, no porque se enfrió — no se esconden en "Frío".
+export const FASES_QUE_NO_SE_ENFRIAN = ['esperando_asesor', 'confirmado', 'no_interesado']
+
+/**
+ * Pasa a frío si lleva 48 h sin contestar y el último mensaje fue NUESTRO
+ * (bot o asesor). Si el último que escribió fue el lead, la pelota está de
+ * nuestro lado y no se enfría.
+ */
+export function debePasarAFrio(params: {
+  stage: string | null | undefined
+  fase: string | null | undefined
+  modoHumano: boolean
+  ultimoRol: string | null | undefined
+  ultimoMensajeAt: string | null | undefined
+  ahora: Date
+}): boolean {
+  if (!params.stage || !STAGES_QUE_SE_ENFRIAN.includes(params.stage)) return false
+  if (params.fase && FASES_QUE_NO_SE_ENFRIAN.includes(params.fase)) return false
+  if (params.modoHumano) return false
+  if (!params.ultimoRol || params.ultimoRol === 'usuario') return false
+  if (!params.ultimoMensajeAt) return false
+  const horas = (params.ahora.getTime() - new Date(params.ultimoMensajeAt).getTime()) / 3_600_000
+  return horas >= HORAS_PARA_FRIO
+}
+
+/** Lead frío que vuelve a escribir: regresa a la columna que le toca. */
+export function stageAlRegresarDeFrio(numPersonas: number | null | undefined): string {
+  return numPersonas ? 'cotizado' : 'nuevo_contacto'
+}
+
 // ─── Lead descartado que vuelve a escribir ────────────────────────────────────
 
 const DIAS_RETOMAR_DESCARTADO = 14
@@ -443,7 +519,7 @@ export function debeRetomarConAsesor(params: {
 export const FASES_SIN_SEGUIMIENTO = ['esperando_asesor', 'confirmado', 'no_interesado']
 
 // Etapas del lead en las que ya lo lleva un humano o ya está descartado.
-export const STAGES_SIN_SEGUIMIENTO = ['no_interesado', 'deposito_pendiente', 'reservado', 'hospedado', 'completado']
+export const STAGES_SIN_SEGUIMIENTO = ['no_interesado', 'frio', 'deposito_pendiente', 'reservado', 'hospedado', 'completado']
 
 // Meta solo deja mandar texto libre dentro de las 24h desde el último mensaje
 // del lead: la ventana tiene que cerrar antes de eso.
