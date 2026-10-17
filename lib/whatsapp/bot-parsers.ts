@@ -548,11 +548,32 @@ export function esHorarioDeSeguimiento(ahora: Date): boolean {
   return horaCDMX >= 8 && horaCDMX < 21
 }
 
-// Cierres breves sin preguntas ni solicitudes adicionales.
-export function esCierreConversacion(text: string): boolean {
+export type ContextoCierre = {
+  fase?: string | null
+  stage?: string | null
+  ultimoMensajeBot?: string | null
+}
+
+export function esAgradecimiento(text: string): boolean {
+  return /^(muchas gracias|mil gracias|gracias)[.!¡,;\s]*$/.test(normalizar(text).trim())
+}
+
+export function cierreProtegido({ fase, stage, ultimoMensajeBot }: ContextoCierre): boolean {
+  return ['deposito_pendiente', 'reservado', 'hospedado', 'completado', 'rentado'].includes(stage || '') ||
+    ['confirmado', 'reservado', 'reserva', 'pago', 'deposito_pendiente', 'cotizacion_aceptada'].includes(fase || '') ||
+    /cotizaci[oó]n aceptada|confirm[oó] que el (rango|precio)|ya tengo tus datos/i.test(ultimoMensajeBot || '')
+}
+
+// Un agradecimiento aislado solo declina la pregunta de interés del catálogo.
+// Nunca descartar automáticamente una reserva, pago o cotización aceptada.
+export function esCierreConversacion(text: string, contexto: ContextoCierre = {}): boolean {
+  if (cierreProtegido(contexto)) return false
   if (esDesinteres(text)) return true
   const t = normalizar(text).trim().replace(/[.!¡,;]+$/g, '').trim()
-  return /^(muchas gracias|mil gracias|gracias|de momento es suficiente|le estaria avisando|te estaria avisando)$/.test(t) ||
+  if (esAgradecimiento(text)) {
+    return /\bte interesa alguna de estas opciones\b/.test(normalizar(contexto.ultimoMensajeBot || '').replace(/[*_]/g, ''))
+  }
+  return /^(?:(?:muchas |mil )?gracias[,;\s]+)?(de momento es suficiente|le estaria avisando|te estaria avisando)$/.test(t) ||
     /gracias.*(despues|luego|mas tarde|con calma)|^(me comunico|te escribo (despues|luego|mas tarde)|hablamos (despues|luego)|nos vemos|adios|bye|hasta luego)\b/.test(t)
 }
 

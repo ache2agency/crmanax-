@@ -75,6 +75,7 @@ function escenario(fase = 'checkin', whatsapp = '+523112694172') {
 test('1: +527331158172 — despedidas y precio cierran una sola vez', async () => {
   for (const text of ['Muchas gracias', 'le estaría avisando', 'sale de mi presupuesto', 'de momento es suficiente']) {
     const s = escenario('confirmar_precios', '+527331158172')
+    s.db.whatsapp_mensajes.push({ conversacion_id: 'conv', rol: 'bot', contenido: '¿Te interesa alguna de estas opciones?', created_at: '2026-10-01' })
     await s.enviar(text)
     assert.equal(s.db.leads[0].stage, 'no_interesado', text)
     assert.equal(s.db.whatsapp_conversaciones[0].estado, 'cerrada')
@@ -138,4 +139,50 @@ test('preguntas y agradecimientos con solicitud no descartan al prospecto', () =
   for (const text of ['Gracias, ¿cuánto cuesta?', '¿Aceptan mascotas?', 'Necesito estacionamiento', 'Me interesa un loft chico']) {
     assert.equal(parsers.esCierreConversacion(text), false, text)
   }
+})
+
+
+test('Gracias tras la cotización NO cierra ni cambia la fase', async () => {
+  const s = escenario('confirmar_interes')
+  s.db.whatsapp_mensajes.push({ conversacion_id: 'conv', rol: 'bot', contenido: 'Tu cotización estimada es $2,100. ¿Te interesa este rango?', created_at: '2026-10-01' })
+  for (const texto of ['Gracias', 'Muchas gracias']) await s.enviar(texto)
+  assert.equal(s.db.leads[0].stage, 'cotizado')
+  assert.equal(s.db.whatsapp_conversaciones[0].fase, 'confirmar_interes')
+  assert.equal(s.db.whatsapp_conversaciones[0].estado, 'abierta')
+  assert.equal(s.db.lead_activities.length, 0)
+  assert.equal(s.respuestas().length, 0)
+})
+
+test('Gracias tras reservar NO cierra; reservas, pagos y cotización aceptada se protegen aun ante rechazo', async () => {
+  for (const estado of ['abierta', 'cerrada']) {
+    for (const [fase, stage] of [
+      ['confirmado', 'reservado'], ['esperando_asesor', 'deposito_pendiente'],
+      ['esperando_asesor', 'hospedado'], ['cotizacion_aceptada', 'cotizado'],
+      ['confirmado', 'cotizado'], ['esperando_asesor', 'cotizado'],
+      ['confirmar_precios', 'reservado'], ['pago', 'cotizado'],
+    ]) {
+      for (const texto of ['Gracias', 'Muchas gracias', 'No me interesa', 'Sale de mi presupuesto', 'No']) {
+        const s = escenario(fase)
+        s.db.leads[0].stage = stage
+        s.db.whatsapp_conversaciones[0].estado = estado
+        s.db.whatsapp_conversaciones[0].humano_intervino = true
+        const contenido = fase === 'esperando_asesor' && stage === 'cotizado' ? '¡Perfecto! Ya tengo tus datos. Un asesor verificará la disponibilidad.' : '¿Te interesa alguna de estas opciones?'
+        s.db.whatsapp_mensajes.push({ conversacion_id: 'conv', rol: 'bot', contenido, created_at: '2026-10-01' })
+        await s.enviar(texto)
+        assert.equal(s.db.leads[0].stage, stage, `${fase}/${stage}: ${texto}`)
+        assert.equal(s.db.whatsapp_conversaciones[0].fase, fase)
+        assert.equal(s.db.whatsapp_conversaciones[0].estado, estado)
+        assert.equal(s.db.lead_activities.length, 0)
+        assert.equal(s.enviados.length, 0)
+      }
+    }
+  }
+})
+
+test('Muchas gracias, de momento es suficiente SÍ cierra sin pregunta de interés previa', async () => {
+  const s = escenario('confirmar_precios')
+  await s.enviar('Muchas gracias, de momento es suficiente')
+  assert.equal(s.db.leads[0].stage, 'no_interesado')
+  assert.equal(s.db.whatsapp_conversaciones[0].estado, 'cerrada')
+  assert.equal(s.respuestas().length, 1)
 })

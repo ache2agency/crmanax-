@@ -20,6 +20,9 @@ import {
   sumarDiasISO,
   type Duracion,
   esCierreConversacion,
+  esAgradecimiento,
+  cierreProtegido,
+  type ContextoCierre,
   motivoCierre,
   preferenciaLoft,
   esRentaMensual,
@@ -843,11 +846,14 @@ export async function POST(request: Request) {
       .limit(1)
       .maybeSingle()
 
+    let contextoCierre: ContextoCierre = { fase: conv?.fase, ultimoMensajeBot: await ultimoMensajeBot(supabase, conv?.id) }
+
     // Lead que pasó a no_interesado solo por 48 h sin contestar (conversación
     // abierta, no lo rechazó) y vuelve a escribir: regresa a su columna.
     if (conv?.lead_id) {
       const { data: leadPrevio } = await supabase.from('leads').select('stage, num_personas').eq('id', conv.lead_id).maybeSingle()
-      if (!esCierreConversacion(text) && descartadoPorSinRespuesta({ stage: leadPrevio?.stage, fase: conv.fase, estado: 'abierta' })) {
+      contextoCierre.stage = leadPrevio?.stage
+      if (!esCierreConversacion(text, contextoCierre) && descartadoPorSinRespuesta({ stage: leadPrevio?.stage, fase: conv.fase, estado: 'abierta' })) {
         await supabase.from('leads').update({ stage: stageAlRegresar(leadPrevio?.num_personas) }).eq('id', conv.lead_id)
       }
     }
@@ -903,7 +909,12 @@ export async function POST(request: Request) {
         const { data: leadPrevio } = convCerrada.lead_id
           ? await supabase.from('leads').select('id, nombre, stage, num_personas').eq('id', convCerrada.lead_id).maybeSingle()
           : { data: null }
-        if (esCierreConversacion(text)) {
+        contextoCierre = {
+          fase: convCerrada.fase, stage: leadPrevio?.stage,
+          ultimoMensajeBot: await ultimoMensajeBot(supabase, convCerrada.id),
+        }
+        if (esCierreConversacion(text, contextoCierre) || esAgradecimiento(text) ||
+          (cierreProtegido(contextoCierre) && esRespuestaNegativa(text))) {
           // Conservar el cierre: otra despedida no reabre ni escala al lead.
           convId = convCerrada.id as string
           leadId = (convCerrada.lead_id as string | null) || undefined
@@ -1021,8 +1032,15 @@ export async function POST(request: Request) {
       console.error('[webhook] error enviando push:', e)
     }
 
+    // Recuperar también el stage de leads enlazados/creados durante este request.
+    if (leadId) {
+      const { data: lead } = await supabase.from('leads').select('stage').eq('id', leadId).maybeSingle()
+      contextoCierre.stage = lead?.stage
+    }
+    contextoCierre.fase = fase
+    const cerrarPorMensaje = esCierreConversacion(text, contextoCierre)
     const preferencia = preferenciaLoft(text)
-    if (leadId && !esCierreConversacion(text)) {
+    if (leadId && !cerrarPorMensaje) {
       if (esRentaMensual(text)) await supabase.from('leads').update({ tipo_renta: 'mes' }).eq('id', leadId)
       if (preferencia) {
         const { data: lead } = await supabase.from('leads').select('notas').eq('id', leadId).maybeSingle()
@@ -1051,9 +1069,9 @@ export async function POST(request: Request) {
       response = MSG.retomarConAsesor()
       nextFase = 'esperando_asesor'
 
-    // Desinterés explícito en CUALQUIER fase ("Sale de mi presupuesto", "no
-    // gracias", "ya no escriban"): se descarta y no se sigue con el flujo.
-    } else if (esCierreConversacion(text)) {
+    // Cierre contextual antes de continuar el flujo: las reservas, pagos y
+    // cotizaciones aceptadas quedan excluidos del descarte automático.
+    } else if (cerrarPorMensaje) {
       if (leadId) await supabase.from('leads').update({ stage: 'no_interesado' }).eq('id', leadId)
       response = fase === 'no_interesado' ? '' : MSG.cierreNoInteresado()
       const motivo = motivoCierre(text)
@@ -1064,13 +1082,20 @@ export async function POST(request: Request) {
       nextFase = 'no_interesado'
       cerrarConversacion = true
 
+    } else if (esAgradecimiento(text) || (cierreProtegido(contextoCierre) &&
+      (esCierreConversacion(text) || esRespuestaNegativa(text)))) {
+      // Cortesía o rechazo en una operación aceptada: conservar fase y stage;
+      // cualquier cambio de reserva/pago lo gestiona el asesor.
+      response = ''
+      nextFase = fase
+
     // Ya se avisó una vez que un asesor la va a contactar — no insistir con
     // el flujo ni repetir el mensaje enlatado en cada mensaje que mande el
     // lead mientras espera. Solo se responde si declina explícitamente;
     // si no, se queda en silencio (se sigue logueando y alertando al admin
     // más arriba, el bot simplemente no contesta).
     } else if (fase === 'esperando_asesor') {
-      if (esRespuestaNegativa(textLower)) {
+      if (!cierreProtegido(contextoCierre) && esRespuestaNegativa(textLower)) {
         if (leadId) await supabase.from('leads').update({ stage: 'no_interesado' }).eq('id', leadId)
         response = `¡Con gusto! Quedamos al pendiente. Si más adelante tienes dudas o quieres retomar, aquí estamos. 😊`
         nextFase = 'no_interesado'
@@ -1141,7 +1166,7 @@ export async function POST(request: Request) {
       if (esRespuestaAfirmativa(textLower)) {
         response = MSG.pedirDatosDisponibilidad()
         nextFase = 'checkin'
-      } else if (esRespuestaNegativa(textLower)) {
+      } else if (!cierreProtegido(contextoCierre) && esRespuestaNegativa(textLower)) {
         if (leadId) await supabase.from('leads').update({ stage: 'no_interesado' }).eq('id', leadId)
         response = MSG.cierreNoInteresado()
         nextFase = 'no_interesado'
@@ -1229,7 +1254,7 @@ export async function POST(request: Request) {
           `👥 *Personas:* ${lead?.num_personas ?? '-'}\n\n` +
           `Confirmó que el rango de precio le interesa. Contactar para confirmar disponibilidad y cerrar.`
         )
-      } else if (esRespuestaNegativa(textLower)) {
+      } else if (!cierreProtegido(contextoCierre) && esRespuestaNegativa(textLower)) {
         // Filtro pedido por el negocio: si el rango no le funciona, se marca
         // como no_interesado y NO se alerta al asesor — el objetivo es que el
         // asesor solo reciba leads que ya confirmaron que el precio les sirve.
