@@ -46,7 +46,7 @@ function escenario(fase = 'checkin', whatsapp = '+523112694172') {
     return query
   } }
   const exports = {}
-  runInNewContext(source, {
+  runInNewContext(source + '\nexports.catalogoPrueba = MSG.precios() + flowReminder("confirmar_precios");', {
     exports, process, Response, console: { log() {}, error: console.error },
     require(name) {
       if (name.endsWith('/bot-parsers')) return parsers
@@ -60,7 +60,7 @@ function escenario(fase = 'checkin', whatsapp = '+523112694172') {
     },
   })
   return {
-    db, enviados, respuestas: () => enviados.filter(msg => msg.to === whatsapp),
+    db, enviados, catalogo: exports.catalogoPrueba, respuestas: () => enviados.filter(msg => msg.to === whatsapp),
     async enviar(text) {
       const response = await exports.POST(new Request('http://localhost/api/whatsapp/webhook', {
         method: 'POST', body: JSON.stringify({ object: 'whatsapp_business_account', entry: [{ changes: [{ value: {
@@ -185,4 +185,31 @@ test('Muchas gracias, de momento es suficiente SÍ cierra sin pregunta de inter�
   assert.equal(s.db.leads[0].stage, 'no_interesado')
   assert.equal(s.db.whatsapp_conversaciones[0].estado, 'cerrada')
   assert.equal(s.respuestas().length, 1)
+})
+
+
+test('catálogo real + Gracias en confirmar_precios cierra', async () => {
+  for (const texto of ['Gracias', 'Muchas gracias']) {
+    const s = escenario('confirmar_precios')
+    assert.match(s.catalogo, /¿Te interesa alguna opción\?/)
+    s.db.whatsapp_mensajes.push({ conversacion_id: 'conv', rol: 'bot', contenido: s.catalogo, created_at: '2026-10-01' })
+    await s.enviar(texto)
+    assert.equal(s.db.leads[0].stage, 'no_interesado')
+    assert.equal(s.db.whatsapp_conversaciones[0].fase, 'no_interesado')
+    assert.equal(s.db.whatsapp_conversaciones[0].estado, 'cerrada')
+    assert.equal(s.respuestas().length, 1)
+  }
+})
+
+test('Gracias en checkin no cierra aunque el último mensaje sea el catálogo', async () => {
+  for (const texto of ['Gracias', 'Muchas gracias']) {
+    const s = escenario('checkin')
+    s.db.whatsapp_mensajes.push({ conversacion_id: 'conv', rol: 'bot', contenido: s.catalogo, created_at: '2026-10-01' })
+    await s.enviar(texto)
+    assert.equal(s.db.leads[0].stage, 'cotizado')
+    assert.equal(s.db.whatsapp_conversaciones[0].fase, 'checkin')
+    assert.equal(s.db.whatsapp_conversaciones[0].estado, 'abierta')
+    assert.equal(s.db.lead_activities.length, 0)
+    assert.equal(s.respuestas().length, 0)
+  }
 })

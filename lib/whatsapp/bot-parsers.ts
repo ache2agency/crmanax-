@@ -564,14 +564,14 @@ export function cierreProtegido({ fase, stage, ultimoMensajeBot }: ContextoCierr
     /cotizaci[oó]n aceptada|confirm[oó] que el (rango|precio)|ya tengo tus datos/i.test(ultimoMensajeBot || '')
 }
 
-// Un agradecimiento aislado solo declina la pregunta de interés del catálogo.
+// Un agradecimiento aislado solo cierra en la fase de confirmar precios.
 // Nunca descartar automáticamente una reserva, pago o cotización aceptada.
 export function esCierreConversacion(text: string, contexto: ContextoCierre = {}): boolean {
   if (cierreProtegido(contexto)) return false
   if (esDesinteres(text)) return true
   const t = normalizar(text).trim().replace(/[.!¡,;]+$/g, '').trim()
   if (esAgradecimiento(text)) {
-    return /\bte interesa alguna de estas opciones\b/.test(normalizar(contexto.ultimoMensajeBot || '').replace(/[*_]/g, ''))
+    return contexto.fase === 'confirmar_precios'
   }
   return /^(?:(?:muchas |mil )?gracias[,;\s]+)?(de momento es suficiente|le estaria avisando|te estaria avisando)$/.test(t) ||
     /gracias.*(despues|luego|mas tarde|con calma)|^(me comunico|te escribo (despues|luego|mas tarde)|hablamos (despues|luego)|nos vemos|adios|bye|hasta luego)\b/.test(t)
