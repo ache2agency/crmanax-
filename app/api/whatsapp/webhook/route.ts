@@ -19,7 +19,13 @@ import {
   sumarMesesISO,
   sumarDiasISO,
   type Duracion,
-  esDesinteres,
+  esCierreConversacion,
+  esAgradecimiento,
+  cierreProtegido,
+  type ContextoCierre,
+  motivoCierre,
+  preferenciaLoft,
+  esRentaMensual,
   esRespuestaNegativa,
   descartadoPorSinRespuesta,
   stageAlRegresar,
@@ -316,10 +322,6 @@ function extraerNombreDeAnuncio(text: string): string | null {
   const m = text.match(/solicitada:\s*(.+)/i)
   if (!m) return null
   return extraerNombre(m[1].split(',')[0])
-}
-
-function esDespedida(textLower: string): boolean {
-  return /gracias.*(despu[eé]s|luego|m[aá]s tarde|con calma)|me comunico|te escribo (despu[eé]s|luego|m[aá]s tarde)|hablamos (despu[eé]s|luego)|nos vemos|^\s*(adi[oó]s|bye|hasta luego)\b/.test(textLower)
 }
 
 async function getAdminId(
@@ -844,11 +846,14 @@ export async function POST(request: Request) {
       .limit(1)
       .maybeSingle()
 
+    let contextoCierre: ContextoCierre = { fase: conv?.fase, ultimoMensajeBot: await ultimoMensajeBot(supabase, conv?.id) }
+
     // Lead que pasó a no_interesado solo por 48 h sin contestar (conversación
     // abierta, no lo rechazó) y vuelve a escribir: regresa a su columna.
     if (conv?.lead_id) {
       const { data: leadPrevio } = await supabase.from('leads').select('stage, num_personas').eq('id', conv.lead_id).maybeSingle()
-      if (descartadoPorSinRespuesta({ stage: leadPrevio?.stage, fase: conv.fase, estado: 'abierta' })) {
+      contextoCierre.stage = leadPrevio?.stage
+      if (!esCierreConversacion(text, contextoCierre) && descartadoPorSinRespuesta({ stage: leadPrevio?.stage, fase: conv.fase, estado: 'abierta' })) {
         await supabase.from('leads').update({ stage: stageAlRegresar(leadPrevio?.num_personas) }).eq('id', conv.lead_id)
       }
     }
@@ -872,7 +877,7 @@ export async function POST(request: Request) {
       return Response.json({ ok: true, human_mode: true })
     }
 
-    const fase = conv?.fase || null
+    let fase = conv?.fase || null
     let convId = conv?.id as string | undefined
     let leadId = conv?.lead_id as string | undefined
 
@@ -904,7 +909,17 @@ export async function POST(request: Request) {
         const { data: leadPrevio } = convCerrada.lead_id
           ? await supabase.from('leads').select('id, nombre, stage, num_personas').eq('id', convCerrada.lead_id).maybeSingle()
           : { data: null }
-        if (debeRetomarConAsesor({
+        contextoCierre = {
+          fase: convCerrada.fase, stage: leadPrevio?.stage,
+          ultimoMensajeBot: await ultimoMensajeBot(supabase, convCerrada.id),
+        }
+        if (esCierreConversacion(text, contextoCierre) || esAgradecimiento(text) ||
+          (cierreProtegido(contextoCierre) && esRespuestaNegativa(text))) {
+          // Conservar el cierre: otra despedida no reabre ni escala al lead.
+          convId = convCerrada.id as string
+          leadId = (convCerrada.lead_id as string | null) || undefined
+          fase = convCerrada.fase as string
+        } else if (debeRetomarConAsesor({
           humanoIntervino: !!convCerrada.humano_intervino,
           stage: leadPrevio?.stage as string | undefined,
           fase: convCerrada.fase as string | undefined,
@@ -933,7 +948,7 @@ export async function POST(request: Request) {
     }
 
     // ── Si no hay conversación, crear lead + conversación ───────────────────
-    if (!conv && !retomadaConAsesor) {
+    if (!convId && !retomadaConAsesor) {
       leadId = await buscarOCrearLead(supabase, from, profileName, text)
 
       // Registrar actividad
@@ -1017,6 +1032,25 @@ export async function POST(request: Request) {
       console.error('[webhook] error enviando push:', e)
     }
 
+    // Recuperar también el stage de leads enlazados/creados durante este request.
+    if (leadId) {
+      const { data: lead } = await supabase.from('leads').select('stage').eq('id', leadId).maybeSingle()
+      contextoCierre.stage = lead?.stage
+    }
+    contextoCierre.fase = fase
+    const cerrarPorMensaje = esCierreConversacion(text, contextoCierre)
+    const preferencia = preferenciaLoft(text)
+    if (leadId && !cerrarPorMensaje) {
+      if (esRentaMensual(text)) await supabase.from('leads').update({ tipo_renta: 'mes' }).eq('id', leadId)
+      if (preferencia) {
+        const { data: lead } = await supabase.from('leads').select('notas').eq('id', leadId).maybeSingle()
+        const nota = `Preferencia de loft: ${preferencia}`
+        if (!lead?.notas?.includes(nota)) await supabase.from('leads').update({
+          notas: [lead?.notas, nota].filter(Boolean).join('\n'),
+        }).eq('id', leadId)
+      }
+    }
+
     // ── State machine ────────────────────────────────────────────────────────
     let response = ''
     let nextFase = fase
@@ -1035,13 +1069,25 @@ export async function POST(request: Request) {
       response = MSG.retomarConAsesor()
       nextFase = 'esperando_asesor'
 
-    // Desinterés explícito en CUALQUIER fase ("Sale de mi presupuesto", "no
-    // gracias", "ya no escriban"): se descarta y no se sigue con el flujo.
-    } else if (fase && fase !== 'no_interesado' && esDesinteres(text)) {
+    // Cierre contextual antes de continuar el flujo: las reservas, pagos y
+    // cotizaciones aceptadas quedan excluidos del descarte automático.
+    } else if (cerrarPorMensaje) {
       if (leadId) await supabase.from('leads').update({ stage: 'no_interesado' }).eq('id', leadId)
-      response = MSG.cierreNoInteresado()
+      response = fase === 'no_interesado' ? '' : MSG.cierreNoInteresado()
+      const motivo = motivoCierre(text)
+      if (leadId && motivo) await supabase.from('lead_activities').insert([{
+        lead_id: leadId, actor_id: null, event_type: 'no_interesado',
+        title: 'Motivo de descarte', detail: text, meta: { motivo, source: 'whatsapp' },
+      }])
       nextFase = 'no_interesado'
       cerrarConversacion = true
+
+    } else if (esAgradecimiento(text) || (cierreProtegido(contextoCierre) &&
+      (esCierreConversacion(text) || esRespuestaNegativa(text)))) {
+      // Cortesía o rechazo en una operación aceptada: conservar fase y stage;
+      // cualquier cambio de reserva/pago lo gestiona el asesor.
+      response = ''
+      nextFase = fase
 
     // Ya se avisó una vez que un asesor la va a contactar — no insistir con
     // el flujo ni repetir el mensaje enlatado en cada mensaje que mande el
@@ -1049,7 +1095,7 @@ export async function POST(request: Request) {
     // si no, se queda en silencio (se sigue logueando y alertando al admin
     // más arriba, el bot simplemente no contesta).
     } else if (fase === 'esperando_asesor') {
-      if (esRespuestaNegativa(textLower)) {
+      if (!cierreProtegido(contextoCierre) && esRespuestaNegativa(textLower)) {
         if (leadId) await supabase.from('leads').update({ stage: 'no_interesado' }).eq('id', leadId)
         response = `¡Con gusto! Quedamos al pendiente. Si más adelante tienes dudas o quieres retomar, aquí estamos. 😊`
         nextFase = 'no_interesado'
@@ -1057,6 +1103,18 @@ export async function POST(request: Request) {
       } else {
         response = ''
         nextFase = 'esperando_asesor'
+      }
+
+    } else if (fase && ['checkin', 'checkout', 'confirmar_precios'].includes(fase) &&
+      !traeFecha && (esRentaMensual(text) || preferencia || clasificarSinFecha(text) === 'sin_fecha_definida') &&
+      !/precio|costo|cu[aá]nto/.test(textLower)) {
+      if (clasificarSinFecha(text) === 'sin_fecha_definida') {
+        response = MSG.sinFechaDefinida()
+        nextFase = 'esperando_asesor'
+        await alertarAdmin(`📅 *Lead sin fecha definida*\n📱 ${from}\n💬 ${text}`)
+      } else {
+        response = '¿Desde qué fecha aproximada te gustaría rentar? Si aún no sabes, dime y un asesor te ayuda. 🙂'
+        nextFase = 'checkin'
       }
 
     // Preguntas de disponibilidad sin fechas: no contestar "No pude entender esa fecha".
@@ -1068,11 +1126,6 @@ export async function POST(request: Request) {
     } else if (fase && detectFaq(textLower) && !traeFecha) {
       const faq = detectFaq(textLower)!
       response = (faq === 'precios' ? await respuestaPrecio(supabase, leadId) : faqResponse(faq)) + flowReminder(fase)
-      nextFase = fase
-
-    // Despedida/pausa: no insistir con el menú del flujo
-    } else if (fase && fase !== 'nombre' && esDespedida(textLower)) {
-      response = `¡Con gusto! Aquí estamos cuando quieras retomar. 😊`
       nextFase = fase
 
     } else if (!fase || fase === 'saludo') {
@@ -1113,7 +1166,7 @@ export async function POST(request: Request) {
       if (esRespuestaAfirmativa(textLower)) {
         response = MSG.pedirDatosDisponibilidad()
         nextFase = 'checkin'
-      } else if (esRespuestaNegativa(textLower)) {
+      } else if (!cierreProtegido(contextoCierre) && esRespuestaNegativa(textLower)) {
         if (leadId) await supabase.from('leads').update({ stage: 'no_interesado' }).eq('id', leadId)
         response = MSG.cierreNoInteresado()
         nextFase = 'no_interesado'
@@ -1201,7 +1254,7 @@ export async function POST(request: Request) {
           `👥 *Personas:* ${lead?.num_personas ?? '-'}\n\n` +
           `Confirmó que el rango de precio le interesa. Contactar para confirmar disponibilidad y cerrar.`
         )
-      } else if (esRespuestaNegativa(textLower)) {
+      } else if (!cierreProtegido(contextoCierre) && esRespuestaNegativa(textLower)) {
         // Filtro pedido por el negocio: si el rango no le funciona, se marca
         // como no_interesado y NO se alerta al asesor — el objetivo es que el
         // asesor solo reciba leads que ya confirmaron que el precio les sirve.
@@ -1285,6 +1338,9 @@ export async function POST(request: Request) {
       response = MSG.saludo(profileName)
       nextFase = 'tipo_renta'
     }
+
+    // Evitar respuestas idénticas consecutivas, conservando los cambios de estado.
+    if (response && response === await ultimoMensajeBot(supabase, convId)) response = ''
 
     // ── Actualizar conversación ──────────────────────────────────────────────
     console.log('[webhook] fase:', fase, '→', nextFase, 'convId:', convId, 'from:', from)

@@ -373,7 +373,7 @@ export function clasificarSinFecha(text: string): TipoSinFecha {
 // Palabras que delatan que el mensaje no es un nombre (pregunta, saludo,
 // intención de renta). "Manejas x mes" se guardó como nombre el 2-oct-2026.
 const PALABRAS_NO_NOMBRE = new Set([
-  'hola', 'gracias', 'buenas', 'buenos', 'tardes', 'noches', 'dias', 'dia',
+  'todas', 'todos', 'hola', 'gracias', 'buenas', 'buenos', 'tardes', 'noches', 'dias', 'dia',
   'informacion', 'info', 'informes', 'precio', 'precios', 'costo', 'costos', 'cuanto', 'cuesta', 'cuestan',
   'quiero', 'quisiera', 'necesito', 'busco', 'buscando', 'renta', 'rentas', 'rentan', 'rento', 'rentar',
   'loft', 'lofts', 'disponibilidad', 'disponible', 'ayuda', 'porfavor', 'favor', 'saludos', 'oferta',
@@ -546,4 +546,50 @@ export const SEGUIMIENTO_MAX_HORAS = 23
 export function esHorarioDeSeguimiento(ahora: Date): boolean {
   const horaCDMX = (ahora.getUTCHours() + 18) % 24
   return horaCDMX >= 8 && horaCDMX < 21
+}
+
+export type ContextoCierre = {
+  fase?: string | null
+  stage?: string | null
+  ultimoMensajeBot?: string | null
+}
+
+export function esAgradecimiento(text: string): boolean {
+  return /^(muchas gracias|mil gracias|gracias)[.!¡,;\s]*$/.test(normalizar(text).trim())
+}
+
+export function cierreProtegido({ fase, stage, ultimoMensajeBot }: ContextoCierre): boolean {
+  return ['deposito_pendiente', 'reservado', 'hospedado', 'completado', 'rentado'].includes(stage || '') ||
+    ['confirmado', 'reservado', 'reserva', 'pago', 'deposito_pendiente', 'cotizacion_aceptada'].includes(fase || '') ||
+    /cotizaci[oó]n aceptada|confirm[oó] que el (rango|precio)|ya tengo tus datos/i.test(ultimoMensajeBot || '')
+}
+
+// Un agradecimiento aislado solo cierra en la fase de confirmar precios.
+// Nunca descartar automáticamente una reserva, pago o cotización aceptada.
+export function esCierreConversacion(text: string, contexto: ContextoCierre = {}): boolean {
+  if (cierreProtegido(contexto)) return false
+  if (esDesinteres(text)) return true
+  const t = normalizar(text).trim().replace(/[.!¡,;]+$/g, '').trim()
+  if (esAgradecimiento(text)) {
+    return contexto.fase === 'confirmar_precios'
+  }
+  return /^(?:(?:muchas |mil )?gracias[,;\s]+)?(de momento es suficiente|le estaria avisando|te estaria avisando)$/.test(t) ||
+    /gracias.*(despues|luego|mas tarde|con calma)|^(me comunico|te escribo (despues|luego|mas tarde)|hablamos (despues|luego)|nos vemos|adios|bye|hasta luego)\b/.test(t)
+}
+
+export function motivoCierre(text: string): string | null {
+  const t = normalizar(text)
+  if (/mascotas?|pet friendly/.test(t)) return 'mascotas'
+  if (/estacionamiento/.test(t)) return 'estacionamiento'
+  if (/presupuesto|car[oa]s?\b|no me alcanza/.test(t)) return 'precio'
+  return null
+}
+
+export function preferenciaLoft(text: string): string | null {
+  const t = normalizar(text)
+  return t.match(/\bloft (chico|pequeno|mediano|grande)\b/)?.[1]?.replace('pequeno', 'chico') || null
+}
+
+export function esRentaMensual(text: string): boolean {
+  return /\b(mensual(?:mente)?|por mes|renta mensual|mes completo)\b/.test(normalizar(text))
 }
