@@ -12,6 +12,8 @@ import {
   debeRetomarConAsesor,
   decidirFechas,
   extraerFechas,
+  extraerPersonas,
+  fechaExplicitaInvalida,
   extraerNombre,
   formatFecha,
   hoyISO,
@@ -32,7 +34,7 @@ import {
 } from '@/lib/whatsapp/bot-parsers'
 import { barridoSeguimientosOportunista } from '@/lib/whatsapp/seguimiento'
 import { loftsDisponibles } from '@/lib/disponibilidad'
-import { resolverDisponibilidadFase2 } from '@/lib/whatsapp/fase2-disponibilidad'
+import { resolverDisponibilidadFase2, minimoFinDeSemana } from '@/lib/whatsapp/fase2-disponibilidad'
 
 const ADMIN_WHATSAPP_NUMBERS = (process.env.ALERT_WHATSAPP_NUMBER || '+525534815126,+527471028306')
   .split(',')
@@ -570,6 +572,9 @@ const MSG = {
 // ─── FAQ detector ─────────────────────────────────────────────────────────────
 
 function detectFaq(textLower: string): string | null {
+  if (/\b(?:impuestos?|iva|factura)\b/i.test(textLower)) return 'impuestos'
+  if (/dep[oó]sito|garant[ií]a/i.test(textLower)) return 'deposito'
+  if (/requisitos?|documentos?|proceso|apartar|reservar/i.test(textLower)) return 'requisitos'
   if (/mascota|pet\s*friendly|petfriendly|perro|perrita|perrito|gato|gatita|gatito/.test(textLower)) return 'mascotas'
   if (/precio|costo|cuánto|cuanto|tarifa|cobran|valen|rate/.test(textLower)) return 'precios'
   if (/ubica|dónde|donde|direcci|mapa|cómo llegar|como llegar/.test(textLower)) return 'ubicacion'
@@ -581,8 +586,13 @@ function detectFaq(textLower: string): string | null {
   return null
 }
 
-function faqResponse(key: string): string {
+function faqResponse(key: string, tipoRenta?: string | null): string {
   switch (key) {
+    case 'impuestos': return 'Los precios no incluyen impuestos; si necesitas factura es más IVA.'
+    case 'deposito': return 'Un asesor te confirma el monto del depósito según el loft y las fechas.'
+    case 'requisitos': return tipoRenta === 'noche'
+      ? 'Para estancias cortas: fechas definidas → depósito en garantía para apartar → foto de INE por ambos lados → a tu llegada se paga la reserva (el depósito no se toma a cuenta).'
+      : '1. Enviar los documentos al correo anaxagoras41suite@gmail.com\n2. Una vez con el visto bueno de los documentos se hace la transferencia del depósito en garantía (con esto se aparta el loft y las fechas)\n3. A tu llegada se paga en efectivo la renta que va corriendo.\nhttps://anaxagoras41suite.arqarri.com/#blog'
     case 'precios': return MSG.precios()
     case 'ubicacion': return MSG.ubicacion()
     case 'servicios': return MSG.servicios()
@@ -590,7 +600,7 @@ function faqResponse(key: string): string {
     case 'mascotas': return MSG.mascotas()
     case 'rooftop': return MSG.rooftop()
     case 'seguridad': return MSG.seguridad()
-    case 'fotos': return MSG.fotos()
+    case 'fotos': return '📸 Fotos por tipo de loft:\nChico: https://anaxagoras41suite.arqarri.com/loftChico.php\nMediano: https://anaxagoras41suite.arqarri.com/loftMediano.php\nGrande: https://anaxagoras41suite.arqarri.com/loftGrande.php'
     default: return MSG.noInfo()
   }
 }
@@ -705,6 +715,8 @@ async function manejarFaseFecha(
     duracionPendiente = extraerFechas(ultimoBot.slice(PREFIJO_DURACION.length).split('*')[0], hoy).duracion
   }
 
+  const fechaInvalida = fechaExplicitaInvalida(text)
+  if (fechaInvalida) return { response: `¿Me confirmas la fecha *${fechaInvalida}*? El año o la fecha no es válido.`, nextFase: fase }
   const fechasExtraidas = extraerFechas(text, hoy)
   if (fase === 'checkin' && /\b(mensual|por mes|renta mensual|mes completo)\b/i.test(text) && fechasExtraidas.fechas.length === 1) {
     const checkin = fechasExtraidas.fechas[0]
@@ -728,6 +740,8 @@ async function manejarFaseFecha(
 
   const d = decidirFechas(fase, text, hoy, checkinGuardado, duracionPendiente)
   switch (d.tipo) {
+    case 'fecha_invalida':
+      return { response: `¿Me confirmas la fecha *${d.texto}*?`, nextFase: fase }
     case 'completo': {
       if (leadId) {
         await supabase.from('leads').update({
@@ -762,6 +776,38 @@ async function manejarFaseFecha(
       return { response: MSG.errorFecha(), nextFase: fase }
     }
   }
+}
+
+async function manejarPersonas(ctx: {
+  supabase: ReturnType<typeof createServiceRoleClient>; leadId: string | undefined;
+  from: string; profileName: string; num: number;
+}): Promise<{ response: string; nextFase: string }> {
+  const { supabase, leadId, from, profileName, num } = ctx
+  let response = '', nextFase = 'esperando_asesor'
+  const { data: lead } = leadId
+    ? await supabase.from('leads').select('nombre, fecha_checkin, fecha_checkout').eq('id', leadId).maybeSingle()
+    : { data: null }
+  const checkin = lead?.fecha_checkin || ''
+  const checkout = lead?.fecha_checkout || ''
+  const nombreLead = lead?.nombre || profileName || 'amigo/a'
+  const tipoRenta = inferirTipoRenta(checkin, checkout)
+
+  if (leadId) {
+    await supabase.from('leads').update({ num_personas: num, tipo_renta: tipoRenta, stage: 'cotizado' }).eq('id', leadId)
+  }
+
+  const resultadoDisponibilidad = await resolverDisponibilidadFase2({
+    nombre: nombreLead,
+    whatsapp: from,
+    checkin,
+    checkout,
+    personas: num,
+    consultar: loftsDisponibles,
+  })
+  response = resultadoDisponibilidad.response
+  nextFase = minimoFinDeSemana(checkin, checkout) ? 'checkout' : 'esperando_asesor'
+  await alertarAdmin(resultadoDisponibilidad.alerta)
+  return { response, nextFase }
 }
 
 // ─── Webhook verification (GET) ───────────────────────────────────────────────
@@ -1057,8 +1103,8 @@ export async function POST(request: Request) {
     let cerrarConversacion = false
     // En los pasos de fecha, un mensaje que trae fecha/duración ("del 15 al
     // 19, ¿cuánto sale?") se procesa como fecha, no como pregunta frecuente.
-    const traeFecha = (fase === 'checkin' || fase === 'checkout') &&
-      (() => { const r = extraerFechas(text, hoyISO()); return r.fechas.length > 0 || !!r.duracion })()
+    const datosFecha = extraerFechas(text, hoyISO())
+    const traeFecha = datosFecha.fechas.length > 0 || !!datosFecha.duracion || !!fechaExplicitaInvalida(text)
 
     // Comando global: reiniciar en cualquier fase
     if (textLower === 'reiniciar') {
@@ -1088,6 +1134,27 @@ export async function POST(request: Request) {
       // cualquier cambio de reserva/pago lo gestiona el asesor.
       response = ''
       nextFase = fase
+
+    } else if (detectFaq(textLower) && !traeFecha && !(fase === 'personas' && extraerPersonas(text, true))) {
+      const faq = detectFaq(textLower)!
+      let nombreCapturado: string | null = null
+      if (faq === 'precios' && (!fase || ['saludo', 'nombre'].includes(fase))) {
+        nombreCapturado = extraerNombre(text)
+        if (nombreCapturado && leadId) await supabase.from('leads').update({ nombre: nombreCapturado }).eq('id', leadId)
+      }
+      const { data: lead } = leadId
+        ? await supabase.from('leads').select('tipo_renta, fecha_checkin, fecha_checkout').eq('id', leadId).maybeSingle()
+        : { data: null }
+      const tipo = /estancias? cortas?|por noche/i.test(text) ? 'noche'
+        : lead?.tipo_renta || (lead?.fecha_checkin && lead?.fecha_checkout ? inferirTipoRenta(lead.fecha_checkin, lead.fecha_checkout) : null)
+      nextFase = nombreCapturado ? 'confirmar_precios' : (fase || 'nombre')
+      response = (nombreCapturado ? `Mucho gusto, *${nombreCapturado}*!\n\n` : '') +
+        (faq === 'precios' ? await respuestaPrecio(supabase, leadId) : faqResponse(faq, tipo)) + flowReminder(nextFase)
+
+    } else if (traeFecha && (!fase || ['saludo', 'nombre', 'confirmar_precios', 'tipo_renta', 'personas', 'checkin', 'checkout'].includes(fase))) {
+      const r = await manejarFaseFecha(fase === 'checkout' ? 'checkout' : 'checkin', { supabase, convId, leadId, from, text })
+      response = r.response
+      nextFase = r.nextFase
 
     // Ya se avisó una vez que un asesor la va a contactar — no insistir con
     // el flujo ni repetir el mensaje enlatado en cada mensaje que mande el
@@ -1120,12 +1187,6 @@ export async function POST(request: Request) {
     // Preguntas de disponibilidad sin fechas: no contestar "No pude entender esa fecha".
     } else if (fase && preguntaDisponibilidad(textLower) && !traeFecha) {
       response = MSG.disponibilidadSinFechas()
-      nextFase = fase
-
-    // FAQ: responde preguntas sin romper el flujo de reserva
-    } else if (fase && detectFaq(textLower) && !traeFecha) {
-      const faq = detectFaq(textLower)!
-      response = (faq === 'precios' ? await respuestaPrecio(supabase, leadId) : faqResponse(faq)) + flowReminder(fase)
       nextFase = fase
 
     } else if (!fase || fase === 'saludo') {
@@ -1201,35 +1262,14 @@ export async function POST(request: Request) {
       nextFase = r.nextFase
 
     } else if (fase === 'personas') {
-      const num = parseInt(text, 10)
-      if (isNaN(num) || num < 1 || num > 30) {
+      const num = extraerPersonas(text, true)
+      if (num === null) {
         response = MSG.errorPersonas()
         nextFase = 'personas'
       } else {
-        const { data: lead } = leadId
-          ? await supabase.from('leads').select('nombre, fecha_checkin, fecha_checkout').eq('id', leadId).maybeSingle()
-          : { data: null }
-        const checkin = lead?.fecha_checkin || ''
-        const checkout = lead?.fecha_checkout || ''
-        const nombreLead = lead?.nombre || profileName || 'amigo/a'
-        const tipoRenta = inferirTipoRenta(checkin, checkout)
-        const noches = calcularNoches(checkin, checkout)
-
-        if (leadId) {
-          await supabase.from('leads').update({ num_personas: num, tipo_renta: tipoRenta, stage: 'cotizado' }).eq('id', leadId)
-        }
-
-        const resultadoDisponibilidad = await resolverDisponibilidadFase2({
-          nombre: nombreLead,
-          whatsapp: from,
-          checkin,
-          checkout,
-          personas: num,
-          consultar: loftsDisponibles,
-        })
-        response = resultadoDisponibilidad.response
-        nextFase = 'esperando_asesor'
-        await alertarAdmin(resultadoDisponibilidad.alerta)
+        const r = await manejarPersonas({ supabase, leadId, from, profileName, num })
+        response = r.response
+        nextFase = r.nextFase
       }
 
     } else if (fase === 'confirmar_interes') {
@@ -1337,6 +1377,20 @@ export async function POST(request: Request) {
       // Fase desconocida — reiniciar
       response = MSG.saludo(profileName)
       nextFase = 'tipo_renta'
+    }
+
+    if (traeFecha && !fechaExplicitaInvalida(text) && ['checkout', 'personas'].includes(nextFase || '')) {
+      const personas = extraerPersonas(text)
+      if (personas && leadId) await supabase.from('leads').update({ num_personas: personas }).eq('id', leadId)
+      if (nextFase === 'personas') {
+        const { data: lead } = leadId ? await supabase.from('leads').select('num_personas').eq('id', leadId).maybeSingle() : { data: null }
+        const num = personas || lead?.num_personas
+        if (num) {
+          const r = await manejarPersonas({ supabase, leadId, from, profileName, num })
+          response = r.response
+          nextFase = r.nextFase
+        }
+      }
     }
 
     // Evitar respuestas idénticas consecutivas, conservando los cambios de estado.

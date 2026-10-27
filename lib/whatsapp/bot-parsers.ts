@@ -9,6 +9,8 @@ export const MESES_ES: Record<string, string> = {
   enero: '01', febrero: '02', marzo: '03', abril: '04', mayo: '05', junio: '06',
   julio: '07', agosto: '08', septiembre: '09', setiembre: '09', octubre: '10',
   noviembre: '11', diciembre: '12',
+  ene: '01', feb: '02', mar: '03', abr: '04', jun: '06', jul: '07',
+  ago: '08', sep: '09', sept: '09', oct: '10', nov: '11', dic: '12',
 }
 
 const DIAS_SEMANA: Record<string, number> = {
@@ -280,6 +282,7 @@ export type DecisionFecha =
   | { tipo: 'fecha_pasada'; fecha: string }
   | { tipo: 'checkout_invalido' }
   | { tipo: 'sin_fecha' }
+  | { tipo: 'fecha_invalida'; texto: string }
 
 /**
  * Decide qué hacer con un mensaje en las fases 'checkin' o 'checkout'.
@@ -294,6 +297,8 @@ export function decidirFechas(
   checkinGuardado?: string | null,
   duracionPendiente?: Duracion | null
 ): DecisionFecha {
+  const invalida = fechaExplicitaInvalida(text)
+  if (invalida) return { tipo: 'fecha_invalida', texto: invalida }
   const { fechas, duracion } = extraerFechas(text, hoy, fase === 'checkout' ? checkinGuardado || undefined : undefined)
 
   if (fase === 'checkin') {
@@ -373,6 +378,8 @@ export function clasificarSinFecha(text: string): TipoSinFecha {
 // Palabras que delatan que el mensaje no es un nombre (pregunta, saludo,
 // intención de renta). "Manejas x mes" se guardó como nombre el 2-oct-2026.
 const PALABRAS_NO_NOMBRE = new Set([
+  'cual', 'cuales', 'requisito', 'requisitos', 'proceso', 'reservar', 'fotos', 'foto', 'deposito', 'impuestos',
+  'disculpe', 'disculpa', 'perdon', 'perdone', 'una', 'uno', 'dos',
   'todas', 'todos', 'hola', 'gracias', 'buenas', 'buenos', 'tardes', 'noches', 'dias', 'dia',
   'informacion', 'info', 'informes', 'precio', 'precios', 'costo', 'costos', 'cuanto', 'cuesta', 'cuestan',
   'quiero', 'quisiera', 'necesito', 'busco', 'buscando', 'renta', 'rentas', 'rentan', 'rento', 'rentar',
@@ -396,7 +403,7 @@ export function limpiarNombre(text: string): string {
 
 export function esNombreValido(text: string): boolean {
   const t = text.trim()
-  if (!t || t.length > 40) return false
+  if (!t || t.length > 40 || /^(el|la|los|las)$/i.test(t)) return false
   if (/[?¿@$]/.test(t)) return false
   if (/\d/.test(t)) return false
   if (!/[a-záéíóúñ]/i.test(t)) return false
@@ -408,7 +415,7 @@ export function esNombreValido(text: string): boolean {
 
 /** Nombre limpio si el mensaje parece un nombre; null si no. */
 export function extraerNombre(text: string): string | null {
-  const limpio = limpiarNombre(text)
+  const limpio = limpiarNombre(text).split(/\s+(?=(?:costo|costos|precio|precios)\b)/i)[0].trim()
   return esNombreValido(limpio) ? limpio : null
 }
 
@@ -592,4 +599,33 @@ export function preferenciaLoft(text: string): string | null {
 
 export function esRentaMensual(text: string): boolean {
   return /\b(mensual(?:mente)?|por mes|renta mensual|mes completo)\b/.test(normalizar(text))
+}
+
+
+// Un año mal escrito nunca permite promover la salida a llegada.
+export function fechaExplicitaInvalida(text: string): string | null {
+  for (const m of text.matchAll(/(?<![\d/.-])(\d{1,2})\s*[/.-]+\s*(\d{1,2})\s*[/.-]+\s*(\d+)(?!\d)/g)) {
+    const year = anioCompleto(m[3])
+    if (![2, 4].includes(m[3].length) || !fechaCalendarioValida(year, m[2], m[1])) return m[0]
+  }
+  return null
+}
+
+export function extraerPersonas(text: string, permitirRespuestaSola = false): number | null {
+  const t = normalizar(text).trim().replace(/[.!]+$/g, '')
+  const numeros = `\\d{1,2}|${Object.keys(NUMEROS_ES).join('|')}`
+  const patrones = [
+    new RegExp(`\\b(${numeros})\\s*(?:personas?|huespedes?|adultos?)\\b`),
+    new RegExp(`\\b(?:somos|para)\\s+(${numeros})\\b(?!\\s*(?:mascotas?|noches?|meses?|dias?)\\b)`),
+    new RegExp(`^(${numeros})\\s+y\\s+\\d+\\s+mascotas?\\b`),
+  ]
+  if (permitirRespuestaSola) patrones.push(new RegExp(`^(?:ok\\s+)?(${numeros})$`))
+  for (const re of patrones) {
+    const m = t.match(re)
+    if (m) {
+      const n = NUMEROS_ES[m[1]] ?? Number(m[1])
+      return n >= 1 && n <= 30 ? n : null
+    }
+  }
+  return null
 }

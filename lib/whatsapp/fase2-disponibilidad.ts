@@ -127,6 +127,7 @@ async function sugerirFechaCercana({
     co.setUTCDate(co.getUTCDate() + noches)
     const ciISO = ci.toISOString().slice(0, 10)
     const coISO = co.toISOString().slice(0, 10)
+    if (minimoFinDeSemana(ciISO, coISO)) continue
     const r = await consultar({ checkin: ciISO, checkout: coISO, personas })
     const tipos = tiposDisponiblesTexto(r.disponibles, personas)
     if (tipos) return { checkin: ciISO, checkout: coISO, tipos }
@@ -155,6 +156,12 @@ export async function resolverDisponibilidadFase2({
 }): Promise<ResultadoDisponibilidadFase2> {
   const noches = calcularNochesFase2(checkin, checkout)
   const tipoRenta = tipoRentaDesdeFechas(checkin, checkout)
+  if (minimoFinDeSemana(checkin, checkout)) return {
+    ok: false,
+    response: 'En fines de semana solo tenemos disponibilidad de 2 noches para salir domingo o lunes. ¿Qué fecha de salida prefieres?',
+    alerta: `Estancia de una noche en fin de semana — ${whatsapp}. Pedir nuevas fechas.`,
+    tiposMismaFecha: '', sugerencia: null,
+  }
   const disponibilidad = await consultar({ checkin, checkout, personas })
   const loft = elegirLoftDisponible(disponibilidad.disponibles, personas)
 
@@ -205,4 +212,9 @@ export async function resolverDisponibilidadFase2({
     `💰 *Total estimado:* pendiente\n\n` +
     `Revisar fechas alternativas o confirmar manualmente.`
   return { ok: false, response, alerta, tiposMismaFecha, sugerencia }
+}
+
+export function minimoFinDeSemana(checkin: string, checkout: string): boolean {
+  const dia = new Date(`${checkin}T00:00:00Z`).getUTCDay()
+  return (dia === 5 || dia === 6) && calcularNochesFase2(checkin, checkout) === 1
 }
