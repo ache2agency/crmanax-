@@ -356,7 +356,7 @@ export function clasificarSinFecha(text: string): TipoSinFecha {
   if (/\bno (tengo|se|sabria)\b.*\bfecha|\bno tengo fecha|\b(aun|todavia) no (se|tengo|lo se|la tengo|defino)|\bno (lo )?se (aun|todavia|exactamente|bien)\b|\bindefinid|\blo mas pronto|\bcuanto antes|\b(semana|mes) (proxima|proximo|que viene|entrante)|\bproxim[ao] (semana|mes)|\bno tengo (aun |todavia )?(la )?(fecha|salida|llegada)|\bdepende\b|\bsin fecha\b|\bno la tendria\b|\bno se\b$/.test(t)) {
     return 'sin_fecha_definida'
   }
-  if (/\bno entend|\bno (me )?(contestan|responden|entienden|explican)|\bno contesta|\bya no escriban\b|\bhablar con (alguien|una persona|un asesor|asesor|un humano)|\basesor\b|\bpersona real\b|\bun humano\b|\bllamar(me|nos)?\b|\bllamada\b/.test(t)) {
+  if (/\bno entend|\bno (me )?(contestan|responden|entienden|explican)|\bno contesta|\bya no escriban\b|\bhablar con (alguien|una persona|un asesor|asesor|un humano)|\bno hablo con (una? )?(ia|i a|maquina|bot|robot)\b|\basesor\b|\bpersona real\b|\bun humano\b|\bllamar(me|nos)?\b|\bllamada\b/.test(t)) {
     return 'quiere_humano'
   }
   // Pide información general o pregunta por renta mensual ("Quiero información",
@@ -415,7 +415,9 @@ export function esNombreValido(text: string): boolean {
 
 /** Nombre limpio si el mensaje parece un nombre; null si no. */
 export function extraerNombre(text: string): string | null {
-  const limpio = limpiarNombre(text).split(/\s+(?=(?:costo|costos|precio|precios)\b)/i)[0].trim()
+  // "Arturo Garcia  5551000099" (+525551000099, 29-oct): quitar el teléfono pegado al nombre.
+  const sinTelefono = text.replace(/\+?\d[\d\s-]{6,}\d/g, ' ')
+  const limpio = limpiarNombre(sinTelefono).split(/\s+(?=(?:costo|costos|precio|precios)\b)/i)[0].trim()
   return esNombreValido(limpio) ? limpio : null
 }
 
@@ -584,6 +586,21 @@ export function esCierreConversacion(text: string, contexto: ContextoCierre = {}
     /gracias.*(despues|luego|mas tarde|con calma)|^(me comunico|te escribo (despues|luego|mas tarde)|hablamos (despues|luego)|nos vemos|adios|bye|hasta luego)\b/.test(t)
 }
 
+/**
+ * El lead pospone la decisión sin rechazar: "Yo los contacto", "Lo reviso con calma",
+ * "Mañana les respondo", "Si me interesa, pero no en este momento" (casos reales 26-29 oct).
+ * El bot no insiste con "Responde sí…" ni toma "mañana" como fecha de llegada.
+ */
+export function esPosponer(text: string): boolean {
+  const t = normalizar(text).trim()
+  if (esDesinteres(text) || /[?¿]/.test(t)) return false
+  return /\b(yo )?(los|las|te|le|les) (contacto|contactamos|escribo|aviso|marco|llamo|respondo|confirmo)\b/.test(t) ||
+    /\b(lo|la|los) (reviso|revisare|pienso|pensare|checo|platico|consulto|analizo)\b/.test(t) ||
+    /\breviso (mi|el|nuestro) presupuesto\b|\bme comunico\b|\bnos comunicamos\b|\bmas adelante\b/.test(t) ||
+    /\bno (en )?(este|estos) momentos?\b|\bpor (ahora|el momento) no\b|\bde momento no\b|\bahorita no\b/.test(t) ||
+    /\bgracias por (su|tu) (atencion|tiempo|informacion|info|seguimiento)\b|\bno habia podido leer\b/.test(t)
+}
+
 export function motivoCierre(text: string): string | null {
   const t = normalizar(text)
   if (/mascotas?|pet friendly/.test(t)) return 'mascotas'
@@ -628,4 +645,11 @@ export function extraerPersonas(text: string, permitirRespuestaSola = false): nu
     }
   }
   return null
+}
+
+// "Pues quería ahorita en noviembre" (+522294854075, 27-oct): mes sin día → preguntar el día.
+export function mesSinDia(text: string): string | null {
+  const t = normalizar(text)
+  if (/\d/.test(t)) return null
+  return Object.keys(MESES_ES).find(mes => new RegExp(`\\b${mes}\\b`).test(t)) || null
 }

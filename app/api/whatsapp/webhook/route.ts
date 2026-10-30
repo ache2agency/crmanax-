@@ -23,6 +23,9 @@ import {
   type Duracion,
   esCierreConversacion,
   esAgradecimiento,
+  esPosponer,
+  mesSinDia,
+  MESES_ES,
   cierreProtegido,
   type ContextoCierre,
   motivoCierre,
@@ -482,6 +485,9 @@ const MSG = {
   retomarConAsesor: () =>
     `¡Hola de nuevo! 👋 Gracias por escribirnos. Ya le aviso a un asesor para que retome tu solicitud contigo; en breve te contacta. 🙌`,
 
+  posponer: () =>
+    `¡Claro! 😊 Tómate tu tiempo, aquí estamos cuando lo decidas.\n\nSi quieres ver fotos y detalles de los lofts: https://anaxagoras41suite.arqarri.com/`,
+
   escalarFecha: () =>
     `Ya te paso con un asesor para que te ayude directamente con eso. En un momento te contactan. 🙌`,
 
@@ -572,6 +578,7 @@ const MSG = {
 // ─── FAQ detector ─────────────────────────────────────────────────────────────
 
 function detectFaq(textLower: string): string | null {
+  if (/(renta|rentas|rentar|contrato|busco|buscando).{0,40}(anual|por (un )?a[ñn]o|largo plazo|permanente|tradicional)/.test(textLower)) return 'renta_anual'
   if (/\b(?:impuestos?|iva|factura)\b/i.test(textLower)) return 'impuestos'
   if (/dep[oó]sito|garant[ií]a/i.test(textLower)) return 'deposito'
   if (/requisitos?|documentos?|proceso|apartar|reservar/i.test(textLower)) return 'requisitos'
@@ -589,6 +596,7 @@ function detectFaq(textLower: string): string | null {
 function faqResponse(key: string, tipoRenta?: string | null): string {
   switch (key) {
     case 'impuestos': return 'Los precios no incluyen impuestos; si necesitas factura es más IVA.'
+    case 'renta_anual': return 'Por ahora manejamos estancias por noche y rentas mensuales; no tenemos contratos de renta tradicional por año. 🙏'
     case 'deposito': return 'Un asesor te confirma el monto del depósito según el loft y las fechas.'
     case 'requisitos': return tipoRenta === 'noche'
       ? 'Para estancias cortas: fechas definidas → depósito en garantía para apartar → foto de INE por ambos lados → a tu llegada se paga la reserva (el depósito no se toma a cuenta).'
@@ -773,6 +781,8 @@ async function manejarFaseFecha(
       if (yaFalloAntes) return atorado()
       if (tipo === 'pregunta') return { response: MSG.errorFechaPregunta(cual), nextFase: fase }
       if (tipo === 'cortesia') return { response: MSG.cortesiaFecha(cual), nextFase: fase }
+      const mes = mesSinDia(text)
+      if (mes) return { response: `¿Qué día de ${mes} te gustaría ${cual === 'llegada' ? 'llegar' : 'salir'}? 🙂 Escríbelo así: *15/${MESES_ES[mes]}/${hoy.slice(0, 4)}*`, nextFase: fase }
       return { response: MSG.errorFecha(), nextFase: fase }
     }
   }
@@ -1117,6 +1127,13 @@ export async function POST(request: Request) {
 
     // Cierre contextual antes de continuar el flujo: las reservas, pagos y
     // cotizaciones aceptadas quedan excluidos del descarte automático.
+    // Pospone sin rechazar ("Yo los contacto", "mañana les respondo"): no insistir ni leer
+    // "mañana" como fecha; el lead sigue vivo para el seguimiento.
+    } else if (fase && !['esperando_asesor', 'no_interesado', 'confirmado'].includes(fase) &&
+      !cierreProtegido(contextoCierre) && esPosponer(text)) {
+      response = MSG.posponer()
+      nextFase = fase
+
     } else if (cerrarPorMensaje) {
       if (leadId) await supabase.from('leads').update({ stage: 'no_interesado' }).eq('id', leadId)
       response = fase === 'no_interesado' ? '' : MSG.cierreNoInteresado()
@@ -1202,7 +1219,11 @@ export async function POST(request: Request) {
 
     } else if (fase === 'nombre') {
       const nombre = extraerNombre(text)
-      if (!nombre) {
+      if (!nombre && clasificarSinFecha(text) === 'quiere_humano') {
+        response = MSG.escalarFecha()
+        nextFase = 'esperando_asesor'
+        await alertarAdmin(`🙋 *Lead pide atención de una persona*\n\n📱 *WhatsApp:* ${from}\n💬 *Último mensaje:* "${text}"\n\nContactar directamente.`)
+      } else if (!nombre) {
         const yaFalloAntes = await ultimoMensajeFueError(supabase, convId, [MSG.errorNombre(), MSG.errorNombrePregunta()])
         if (yaFalloAntes) {
           response = MSG.escalarNombre()
