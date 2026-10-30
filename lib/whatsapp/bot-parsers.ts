@@ -234,7 +234,9 @@ export function extraerFechas(
 
   // Duración
   let duracion: Duracion | null = null
-  if (/\btodo el mes\b/.test(t)) {
+  if (/\bmedio mes\b/.test(t)) {
+    duracion = { dias: 15, meses: 0, texto: '15 noches' }
+  } else if (/\btodo el mes\b/.test(t)) {
     duracion = { dias: 0, meses: 1, texto: '1 mes' }
   } else {
     const numeros = Object.keys(NUMEROS_ES).join('|')
@@ -403,12 +405,12 @@ export function limpiarNombre(text: string): string {
 
 export function esNombreValido(text: string): boolean {
   const t = text.trim()
-  if (!t || t.length > 40 || /^(el|la|los|las)$/i.test(t)) return false
+  if (!t || t.length > 100 || /^(el|la|los|las)$/i.test(t)) return false
   if (/[?¿@$]/.test(t)) return false
   if (/\d/.test(t)) return false
   if (!/[a-záéíóúñ]/i.test(t)) return false
   const palabras = t.split(/\s+/).filter(Boolean)
-  if (palabras.length === 0 || palabras.length > 4) return false
+  if (palabras.length === 0 || palabras.length > 12) return false
   if (palabras.map(normalizar).some((p) => PALABRAS_NO_NOMBRE.has(p.replace(/[^a-z]/g, '')))) return false
   return true
 }
@@ -652,4 +654,20 @@ export function mesSinDia(text: string): string | null {
   const t = normalizar(text)
   if (/\d/.test(t)) return null
   return Object.keys(MESES_ES).find(mes => new RegExp(`\\b${mes}\\b`).test(t)) || null
+}
+
+/** Seguimiento usando lo que el cliente ya compartió; un cierre nunca se reactiva. */
+export function mensajeSeguimiento(fase: string | null, lead: {
+  stage?: string; fecha_checkin?: string; fecha_checkout?: string; num_personas?: number;
+  loft_asignado?: string;
+} = {}, ultimoTexto = ''): string | null {
+  if (FASES_SIN_SEGUIMIENTO.includes(fase || '') || STAGES_SIN_SEGUIMIENTO.includes(lead.stage || '') ||
+      esPosponer(ultimoTexto) || esDesinteres(ultimoTexto)) return null
+  const llegada = lead.fecha_checkin, salida = lead.fecha_checkout
+  if (!llegada) return '¿Desde qué fecha te gustaría llegar y hasta cuándo te quedarías?'
+  if (!salida) return `Ya tengo tu llegada el ${formatFecha(llegada)}. ¿Hasta qué fecha te quedarías?`
+  const fechas = `del ${formatFecha(llegada)} al ${formatFecha(salida)}`
+  if (!lead.num_personas) return `¿Para cuántas personas sería ${fechas}?`
+  if (lead.stage === 'cotizado' || fase === 'confirmar_interes') return `¿Te ayudo a apartar ${lead.loft_asignado ? 'el loft ' + lead.loft_asignado : 'un loft'} ${fechas}?`
+  return `Ya tengo tus fechas ${fechas} para ${lead.num_personas} persona(s). ¿Te ayudo a revisar disponibilidad?`
 }

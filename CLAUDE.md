@@ -112,3 +112,10 @@ git push origin nombre-descriptivo-del-cambio
 ## Variables de entorno necesarias
 
 Pídele al dueño del proyecto el archivo `.env.local` — sin él la app no conecta a Supabase ni a las APIs.
+
+## Bot — tarea 7 (30-oct-2026, pendiente de revisión en PR)
+
+- `BOT_FAQ_EN_ESPERA` está **encendido por defecto**, aprobado por Harold el 30-oct. Para apagarlo: `off`, `0` o `false`. Solo responde ubicación, requisitos, fotos, precios publicados y coordinación de visitas; conserva la fase y no consulta disponibilidad. No responde en modo humano ni si un asesor escribió en las últimas 12 h.
+- `DEPOSITO_NOCHE_TEXTO` en `lib/whatsapp/fase2-disponibilidad.ts`: monto pendiente de Harold/Alexis. Mensual: $5,000 vía transferencia, devolución de 5 a 3 días antes de finalizar el mes.
+- Nombres en varios mensajes: espera cinco segundos en fase `nombre`, agrupa fragmentos desde el historial persistido y solo el último responde. Esto agrega cinco segundos de espera a ese paso.
+- No hay URLs directas de imágenes de lofts en el código. Si un enlace no abre, ofrece apoyo de un asesor; envío de fotos pendiente de URLs autorizadas. No inventar detalles del baño ni horarios de visita.

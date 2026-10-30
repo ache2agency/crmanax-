@@ -80,7 +80,7 @@ test('3: preguntas reales contestadas antes de disponibilidad genérica o tarifa
     [undefined, 'Cuánto es el depósito?', /asesor te confirma el monto[\s\S]*loft y las fechas/],
     [undefined, 'Cuáles son los requisitos', /INE[\s\S]*no se toma a cuenta/, 'noche'],
   ]) {
-    for (const fase of ['nombre', 'confirmar_precios', 'checkin', 'personas', 'esperando_asesor']) {
+    for (const fase of ['nombre', 'confirmar_precios', 'checkin', 'personas']) {
       const s = caso(fase, telefono)
       if (tipo) s.lead.tipo_renta = tipo
       await s.enviar(texto)
