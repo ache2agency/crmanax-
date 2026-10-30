@@ -659,7 +659,6 @@ export function mesSinDia(text: string): string | null {
 /** Seguimiento usando lo que el cliente ya compartió; un cierre nunca se reactiva. */
 export function mensajeSeguimiento(fase: string | null, lead: {
   stage?: string; fecha_checkin?: string; fecha_checkout?: string; num_personas?: number;
-  loft_asignado?: string;
 } = {}, ultimoTexto = ''): string | null {
   if (FASES_SIN_SEGUIMIENTO.includes(fase || '') || STAGES_SIN_SEGUIMIENTO.includes(lead.stage || '') ||
       esPosponer(ultimoTexto) || esDesinteres(ultimoTexto)) return null
@@ -668,6 +667,6 @@ export function mensajeSeguimiento(fase: string | null, lead: {
   if (!salida) return `Ya tengo tu llegada el ${formatFecha(llegada)}. ¿Hasta qué fecha te quedarías?`
   const fechas = `del ${formatFecha(llegada)} al ${formatFecha(salida)}`
   if (!lead.num_personas) return `¿Para cuántas personas sería ${fechas}?`
-  if (lead.stage === 'cotizado' || fase === 'confirmar_interes') return `¿Te ayudo a apartar ${lead.loft_asignado ? 'el loft ' + lead.loft_asignado : 'un loft'} ${fechas}?`
+  if (lead.stage === 'cotizado' || fase === 'confirmar_interes') return `¿Te ayudo a apartar un loft ${fechas}?`
   return `Ya tengo tus fechas ${fechas} para ${lead.num_personas} persona(s). ¿Te ayudo a revisar disponibilidad?`
 }

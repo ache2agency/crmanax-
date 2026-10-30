@@ -67,7 +67,7 @@ export async function enviarSeguimientos(
 
   const leadIds = candidatos.map((c) => c.lead_id).filter(Boolean) as string[]
   const { data: leads, error: errorLeads } = leadIds.length
-    ? await supabase.from('leads').select('id, stage, fecha_checkin, fecha_checkout, num_personas, loft_asignado').in('id', leadIds)
+    ? await supabase.from('leads').select('id, stage, fecha_checkin, fecha_checkout, num_personas').in('id', leadIds)
     : { data: [], error: null }
   if (errorLeads) return 0
   const leadPorId = new Map((leads || []).map((l) => [l.id, l]))

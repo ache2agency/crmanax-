@@ -1410,7 +1410,7 @@ export async function POST(request: Request) {
       nextFase = 'confirmado'
       // Alerta: lead confirmó reserva (solo la primera vez — cuando stage sigue en 'cotizado')
       if (leadId) {
-        const { data: leadActual } = await supabase.from('leads').select('stage, nombre, tipo_renta, fecha_checkin, fecha_checkout, num_personas, loft_asignado').eq('id', leadId).maybeSingle()
+        const { data: leadActual } = await supabase.from('leads').select('stage, nombre, tipo_renta, fecha_checkin, fecha_checkout, num_personas').eq('id', leadId).maybeSingle()
         if (leadActual?.stage === 'cotizado') {
           await supabase.from('leads').update({ stage: 'deposito_pendiente' }).eq('id', leadId)
           await alertarAdmin(
@@ -1421,7 +1421,7 @@ export async function POST(request: Request) {
             `📅 *Checkin:* ${formatFecha(leadActual.fecha_checkin || '')}\n` +
             `📅 *Checkout:* ${formatFecha(leadActual.fecha_checkout || '')}\n` +
             `👥 *Personas:* ${leadActual.num_personas || '-'}\n` +
-            `🛏 *Loft:* ${leadActual.loft_asignado || 'pendiente'}\n\n` +
+            `🛏 *Loft:* pendiente de confirmar\n\n` +
             `El lead confirmó interés. Contactar para coordinar depósito.`
           )
         }

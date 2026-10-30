@@ -12,14 +12,14 @@ test('seguimiento por fase respeta fechas, personas, cotización y cierres', () 
   assert.match(mensajeSeguimiento('checkin'), /Desde qué fecha/)
   assert.match(mensajeSeguimiento('checkout', { fecha_checkin: fechas.fecha_checkin }), /Ya tengo tu llegada.*Hasta qué fecha/)
   assert.match(mensajeSeguimiento('personas', fechas), /cuántas personas.*31\/10\/2026.*13\/11\/2026/)
-  assert.match(mensajeSeguimiento('confirmar_interes', { ...fechas, num_personas: 1, stage: 'cotizado', loft_asignado: 'PB-01' }), /apartar el loft PB-01/)
+  assert.match(mensajeSeguimiento('confirmar_interes', { ...fechas, num_personas: 1, stage: 'cotizado' }), /apartar un loft/)
   for (const fase of ['esperando_asesor', 'no_interesado', 'confirmado']) assert.equal(mensajeSeguimiento(fase), null)
   for (const text of ['yo me comunico', 'Muchas gracias. Yo los contacto.', 'ya no lo necesito']) assert.equal(mensajeSeguimiento('personas', fechas, text), null)
   assert.equal(mensajeSeguimiento('personas', { stage: 'reservado' }), null)
 })
 
 test('cotizaciones por noche y mes incluyen proceso y depósito correcto', async () => {
-  for (const [checkout, patron] of [['2026-11-13', /asesor te indica el monto[\s\S]*INE[\s\S]*no se toma a cuenta/], ['2026-11-30', /\$5,000\.00[\s\S]*transferencia[\s\S]*5 a 3 días/]]) {
+  for (const [checkout, patron] of [['2026-11-13', /Depósito en garantía para apartar: \$649 MXN[\s\S]*INE[\s\S]*no se toma a cuenta/], ['2026-11-30', /\$5,000\.00[\s\S]*transferencia[\s\S]*5 a 3 días/]]) {
     const r = await resolverDisponibilidadFase2({ nombre: 'Ana', whatsapp: 'simulado', checkin: '2026-10-31', checkout, personas: 1, consultar: opciones.consultar })
     assert.match(r.response, patron)
   }
@@ -104,4 +104,12 @@ test('flag FAQ acepta 0/off/false para apagar y conserva on/1/true', async () =>
     await s.enviar('Cuál es la ubicación?')
     assert.equal(s.respuestas().length, ['0', 'off', 'false', ' OFF '].includes(valor) ? 0 : 1)
   }
+})
+
+test('confirmado actualiza depósito pendiente con columnas reales y alerta al asesor', async () => {
+  const s = caso('confirmado')
+  Object.assign(s.db.leads[0], { ...fechas, tipo_renta: 'noche', num_personas: 1 })
+  await s.enviar('Continuamos')
+  assert.equal(s.db.leads[0].stage, 'deposito_pendiente')
+  assert.ok(s.enviados.some(m => /Nueva reserva confirmada[\s\S]*Loft:\* pendiente de confirmar/.test(m.body)))
 })

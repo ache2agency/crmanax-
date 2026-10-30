@@ -1,5 +1,5 @@
-// Pendiente: Harold/Alexis confirman el monto por noche.
-export const DEPOSITO_NOCHE_TEXTO = 'Depósito en garantía para apartar: el asesor te indica el monto.'
+// Depósito por noche confirmado por Alexis el 30-oct-2026.
+export const DEPOSITO_NOCHE_TEXTO = 'Depósito en garantía para apartar: $649 MXN'
 export const DEPOSITO_MENSUAL_TEXTO = 'Más depósito en garantía de $5,000.00 pesos vía transferencia bancaria (se regresa de 5 a 3 días antes de finalizar el mes).'
 export function procesoDeposito(tipo: 'noche' | 'mes'): string {
   return tipo === 'mes' ? DEPOSITO_MENSUAL_TEXTO

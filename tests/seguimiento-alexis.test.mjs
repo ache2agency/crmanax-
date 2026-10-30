@@ -33,3 +33,14 @@ test('motor de seguimiento usa contexto, excluye humano/cierres y reclama una so
     }
   }
 })
+
+
+test('mock rechaza loft_asignado con 42703 y acepta loft_id documentado en migración v2', async () => {
+  const s = escenario()
+  const invalida = await s.supabase.from('leads').select('id, loft_asignado').maybeSingle()
+  assert.equal(invalida.error.code, '42703')
+  assert.equal(invalida.data, null)
+  const valida = await s.supabase.from('leads').select('id, loft_id, fecha_checkin, fecha_checkout, num_personas')
+  assert.equal(valida.error, null)
+  assert.equal(valida.data.length, 1)
+})

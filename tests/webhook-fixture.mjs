@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
+import { readFileSync, readdirSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { runInNewContext } from 'node:vm'
 import ts from 'typescript'
@@ -13,6 +13,19 @@ const source = ts.transpileModule(readFileSync(new URL('../app/api/whatsapp/webh
   compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
 }).outputText
 
+// Contrato del mock basado en schema.sql + migraciones locales: PostgREST
+// rechaza columnas inexistentes aunque las filas en memoria no las incluyan.
+const columnasLead = new Set()
+const sqlDir = new URL('../supabase/', import.meta.url)
+for (const archivo of readdirSync(sqlDir).filter(n => n.endsWith('.sql'))) {
+  const sql = readFileSync(new URL(archivo, sqlDir), 'utf8').replace(/--[^\n]*/g, '')
+  const tabla = sql.match(/create table if not exists public\.leads\s*\(([\s\S]*?)\n\);/i)
+  for (const m of (tabla?.[1] || '').matchAll(/^\s+(\w+)\s+/gm)) columnasLead.add(m[1])
+  for (const alter of sql.matchAll(/alter table (?:public\.)?leads\b([^;]*);/gi)) {
+    for (const m of alter[1].matchAll(/add column (?:if not exists )?(\w+)\b/gi)) columnasLead.add(m[1])
+  }
+}
+
 export function escenario(fase = 'checkin', whatsapp = '+523112694172', opciones = {}) {
   const db = {
     leads: [{ id: 'lead', nombre: 'Ana', stage: 'cotizado', notas: 'Nota del asesor' }],
@@ -22,10 +35,16 @@ export function escenario(fase = 'checkin', whatsapp = '+523112694172', opciones
   const enviados = []
   const supabase = { from(table) {
     const filters = []
-    let op = 'select', values, limit
+    let op = 'select', values, limit, selectError
     const orders = []
     const query = {
-      select() { return query },
+      select(columns = '*') {
+        if (table === 'leads') {
+          const invalida = columns.split(',').map(c => c.trim()).find(c => c !== '*' && !columnasLead.has(c))
+          if (invalida) selectError = { code: '42703', message: `column leads.${invalida} does not exist` }
+        }
+        return query
+      },
       eq(k, v) { filters.push(row => row[k] === v); return query },
       in(k, vals) { filters.push(row => vals.includes(row[k])); return query },
       not(k, op, vals) { const lista = vals.slice(1, -1).split(','); filters.push(row => !lista.includes(row[k])); return query },
@@ -35,9 +54,10 @@ export function escenario(fase = 'checkin', whatsapp = '+523112694172', opciones
       limit(n) { limit = n; return query },
       update(v) { op = 'update'; values = v; return query },
       insert(v) { op = 'insert'; values = v; return query },
-      async maybeSingle() { const result = await query; return { ...result, data: result.data[0] || null } },
+      async maybeSingle() { const result = await query; return { ...result, data: result.data?.[0] || null } },
       then(resolve, reject) {
         try {
+          if (selectError) return Promise.resolve({ data: null, error: selectError }).then(resolve, reject)
           let rows = db[table].filter(row => filters.every(fn => fn(row)))
           if (op === 'update') rows.forEach(row => Object.assign(row, values))
           if (op === 'insert') { rows = values.map(v => ({ ...v, id: `${table}-${db[table].length}`, created_at: new Date().toISOString() })); db[table].push(...rows) }
