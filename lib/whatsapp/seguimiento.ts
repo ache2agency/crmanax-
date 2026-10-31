@@ -2,7 +2,7 @@ import { createServiceRoleClient } from '@/utils/supabase/server'
 import { sendMetaWhatsAppMessage } from '@/lib/whatsapp/provider'
 import {
   FASES_SIN_SEGUIMIENTO,
-  STAGES_SIN_SEGUIMIENTO,
+  mensajeSeguimiento,
   SEGUIMIENTO_MIN_HORAS,
   SEGUIMIENTO_MAX_HORAS,
   esHorarioDeSeguimiento,
@@ -12,12 +12,10 @@ import {
   HORAS_SIN_RESPUESTA,
 } from '@/lib/whatsapp/bot-parsers'
 
-export const MENSAJE_SEGUIMIENTO = '¿Te quedó alguna duda sobre los lofts de Anaxágoras 41? Con gusto te ayudamos. 😊'
-
 type Supabase = ReturnType<typeof createServiceRoleClient>
 
 /**
- * Manda "¿Te quedó alguna duda?" a quien dejó el flujo del bot a medias hace
+ * Retoma los datos pendientes de quien dejó el flujo del bot a medias hace
  * entre 10 y 23 horas (antes de que cierre la ventana de 24h de Meta).
  *
  * Excluye (bug 3-oct-2026: se le mandaba a quien esperaba asesor):
@@ -59,24 +57,31 @@ export async function enviarSeguimientos(
   if (candidatos.length === 0) return 0
 
   const ids = candidatos.map((c) => c.id)
-  const { data: conAgente } = await supabase
+  const { data: conAgente, error: errorAgente } = await supabase
     .from('whatsapp_mensajes')
     .select('conversacion_id')
     .in('conversacion_id', ids)
     .eq('rol', 'agente')
+  if (errorAgente) return 0
   const idsConAgente = new Set((conAgente || []).map((m: { conversacion_id: string }) => m.conversacion_id))
 
   const leadIds = candidatos.map((c) => c.lead_id).filter(Boolean) as string[]
-  const { data: leads } = leadIds.length
-    ? await supabase.from('leads').select('id, stage').in('id', leadIds)
-    : { data: [] }
-  const stagePorLead = new Map((leads || []).map((l: { id: string; stage: string }) => [l.id, l.stage]))
+  const { data: leads, error: errorLeads } = leadIds.length
+    ? await supabase.from('leads').select('id, stage, fecha_checkin, fecha_checkout, num_personas').in('id', leadIds)
+    : { data: [], error: null }
+  if (errorLeads) return 0
+  const leadPorId = new Map((leads || []).map((l) => [l.id, l]))
 
   let enviados = 0
   for (const conv of candidatos) {
     if (idsConAgente.has(conv.id)) continue
-    const stage = conv.lead_id ? stagePorLead.get(conv.lead_id) : null
-    if (stage && STAGES_SIN_SEGUIMIENTO.includes(stage)) continue
+    const lead = conv.lead_id ? leadPorId.get(conv.lead_id) : undefined
+    const { data: ultimo, error } = await supabase.from('whatsapp_mensajes')
+      .select('contenido').eq('conversacion_id', conv.id).eq('rol', 'usuario')
+      .order('created_at', { ascending: false }).limit(1).maybeSingle()
+    if (error) continue
+    const mensaje = mensajeSeguimiento(conv.fase, lead, ultimo?.contenido || '')
+    if (!mensaje) continue
 
     const { data: reclamada } = await supabase
       .from('whatsapp_conversaciones')
@@ -87,11 +92,11 @@ export async function enviarSeguimientos(
     if (!reclamada || reclamada.length === 0) continue // otra ejecución ya lo tomó
 
     try {
-      await sendMetaWhatsAppMessage({ to: conv.whatsapp, body: MENSAJE_SEGUIMIENTO })
+      await sendMetaWhatsAppMessage({ to: conv.whatsapp, body: mensaje })
       await supabase.from('whatsapp_mensajes').insert([{
         conversacion_id: conv.id,
         rol: 'bot',
-        contenido: MENSAJE_SEGUIMIENTO,
+        contenido: mensaje,
         raw_payload: { tipo: 'seguimiento_automatico' },
       }])
       enviados++

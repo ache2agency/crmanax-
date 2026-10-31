@@ -1,3 +1,11 @@
+// Depósito por noche confirmado por Alexis el 30-oct-2026.
+export const DEPOSITO_NOCHE_TEXTO = 'Depósito en garantía para apartar: $649 MXN'
+export const DEPOSITO_MENSUAL_TEXTO = 'Más depósito en garantía de $5,000.00 pesos vía transferencia bancaria (se regresa de 5 a 3 días antes de finalizar el mes).'
+export function procesoDeposito(tipo: 'noche' | 'mes'): string {
+  return tipo === 'mes' ? DEPOSITO_MENSUAL_TEXTO
+    : `Con fechas definidas → ${DEPOSITO_NOCHE_TEXTO} → INE por ambos lados → a tu llegada se paga la reserva; el depósito no se toma a cuenta.`
+}
+
 export type TipoRenta = 'noche' | 'mes'
 export type TipoLoft = 'chico' | 'mediano' | 'grande'
 
@@ -173,7 +181,7 @@ export async function resolverDisponibilidadFase2({
       `¡Sí tenemos disponibilidad estimada! 🙌\n\n` +
       `Para *${personas} persona${personas !== 1 ? 's' : ''}* del *${formatFecha(checkin)}* al *${formatFecha(checkout)}*, aparece disponible un *${tipoTexto}*.\n\n` +
       `💰 *Total estimado:* ${total}\n\n` +
-      `Un asesor te confirma la disponibilidad y te ayuda a apartar. 🙌`
+      procesoDeposito(tipoRenta) + `\n\nUn asesor te confirma la disponibilidad y te ayuda a apartar. 🙌`
     const alerta =
       `🆕 *Lead con disponibilidad estimada*\n\n` +
       `👤 *Nombre:* ${nombre}\n` +

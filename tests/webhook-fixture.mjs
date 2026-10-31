@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
+import { readFileSync, readdirSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { runInNewContext } from 'node:vm'
 import ts from 'typescript'
@@ -13,6 +13,19 @@ const source = ts.transpileModule(readFileSync(new URL('../app/api/whatsapp/webh
   compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
 }).outputText
 
+// Contrato del mock basado en schema.sql + migraciones locales: PostgREST
+// rechaza columnas inexistentes aunque las filas en memoria no las incluyan.
+const columnasLead = new Set()
+const sqlDir = new URL('../supabase/', import.meta.url)
+for (const archivo of readdirSync(sqlDir).filter(n => n.endsWith('.sql'))) {
+  const sql = readFileSync(new URL(archivo, sqlDir), 'utf8').replace(/--[^\n]*/g, '')
+  const tabla = sql.match(/create table if not exists public\.leads\s*\(([\s\S]*?)\n\);/i)
+  for (const m of (tabla?.[1] || '').matchAll(/^\s+(\w+)\s+/gm)) columnasLead.add(m[1])
+  for (const alter of sql.matchAll(/alter table (?:public\.)?leads\b([^;]*);/gi)) {
+    for (const m of alter[1].matchAll(/add column (?:if not exists )?(\w+)\b/gi)) columnasLead.add(m[1])
+  }
+}
+
 export function escenario(fase = 'checkin', whatsapp = '+523112694172', opciones = {}) {
   const db = {
     leads: [{ id: 'lead', nombre: 'Ana', stage: 'cotizado', notas: 'Nota del asesor' }],
@@ -22,23 +35,37 @@ export function escenario(fase = 'checkin', whatsapp = '+523112694172', opciones
   const enviados = []
   const supabase = { from(table) {
     const filters = []
-    let op = 'select', values, ascending = true, column, limit
+    let op = 'select', values, limit, selectError
+    const orders = []
     const query = {
-      select() { return query },
+      select(columns = '*') {
+        if (table === 'leads') {
+          const invalida = columns.split(',').map(c => c.trim()).find(c => c !== '*' && !columnasLead.has(c))
+          if (invalida) selectError = { code: '42703', message: `column leads.${invalida} does not exist` }
+        }
+        return query
+      },
       eq(k, v) { filters.push(row => row[k] === v); return query },
-      order(k, opts) { column = k; ascending = opts.ascending; return query },
+      in(k, vals) { filters.push(row => vals.includes(row[k])); return query },
+      not(k, op, vals) { const lista = vals.slice(1, -1).split(','); filters.push(row => !lista.includes(row[k])); return query },
+      lte(k, v) { filters.push(row => row[k] <= v); return query },
+      order(k, opts) { orders.push([k, opts.ascending]); return query },
+      gte(k, v) { filters.push(row => row[k] >= v); return query },
       limit(n) { limit = n; return query },
       update(v) { op = 'update'; values = v; return query },
       insert(v) { op = 'insert'; values = v; return query },
-      async maybeSingle() { const result = await query; return { ...result, data: result.data[0] || null } },
+      async maybeSingle() { const result = await query; return { ...result, data: result.data?.[0] || null } },
       then(resolve, reject) {
         try {
+          if (selectError) return Promise.resolve({ data: null, error: selectError }).then(resolve, reject)
           let rows = db[table].filter(row => filters.every(fn => fn(row)))
           if (op === 'update') rows.forEach(row => Object.assign(row, values))
           if (op === 'insert') { rows = values.map(v => ({ ...v, id: `${table}-${db[table].length}`, created_at: new Date().toISOString() })); db[table].push(...rows) }
           // La inserción conserva el orden aun cuando dos timestamps coincidan.
-          if (column) rows = [...rows].sort((a,b) => String(a[column]).localeCompare(String(b[column])) || db[table].indexOf(a) - db[table].indexOf(b))
-          if (!ascending) rows.reverse()
+          if (orders.length) rows = [...rows].sort((a,b) => {
+            for (const [k, asc] of orders) { const cmp = String(a[k]).localeCompare(String(b[k])); if (cmp) return asc ? cmp : -cmp }
+            return db[table].indexOf(b) - db[table].indexOf(a)
+          })
           if (limit) rows = rows.slice(0, limit)
           return Promise.resolve({ data: rows, error: null }).then(resolve, reject)
         } catch (e) { return Promise.reject(e).then(resolve, reject) }
@@ -48,7 +75,7 @@ export function escenario(fase = 'checkin', whatsapp = '+523112694172', opciones
   } }
   const exports = {}
   runInNewContext(source + '\nexports.catalogoPrueba = MSG.precios() + flowReminder("confirmar_precios");', {
-    exports, process, Response, Date: opciones.hoy ? class extends Date { constructor(...args) { super(...(args.length ? args : [opciones.hoy + 'T12:00:00Z'])) } } : Date, console: { log() {}, error: console.error },
+    exports, process: { env: { ...process.env, BOT_FAQ_EN_ESPERA: opciones.faqEspera } }, Response, setTimeout: opciones.setTimeout || ((fn) => { fn() }), Date: opciones.hoy ? class extends Date { constructor(...args) { super(...(args.length ? args : [opciones.hoy + 'T12:00:00Z'])) } } : Date, console: { log() {}, error: console.error },
     require(name) {
       if (name.endsWith('/bot-parsers')) return opciones.hoy ? { ...parsers, hoyISO: () => opciones.hoy } : parsers
       if (name === '@/utils/supabase/server') return { createServiceRoleClient: () => supabase }
@@ -63,7 +90,7 @@ export function escenario(fase = 'checkin', whatsapp = '+523112694172', opciones
     },
   })
   return {
-    db, enviados, catalogo: exports.catalogoPrueba, respuestas: () => enviados.filter(msg => msg.to === whatsapp),
+    db, supabase, enviados, catalogo: exports.catalogoPrueba, respuestas: () => enviados.filter(msg => msg.to === whatsapp),
     async enviar(text) {
       const response = await exports.POST(new Request('http://localhost/api/whatsapp/webhook', {
         method: 'POST', body: JSON.stringify({ object: 'whatsapp_business_account', entry: [{ changes: [{ value: {

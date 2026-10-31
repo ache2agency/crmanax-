@@ -37,7 +37,7 @@ import {
 } from '@/lib/whatsapp/bot-parsers'
 import { barridoSeguimientosOportunista } from '@/lib/whatsapp/seguimiento'
 import { loftsDisponibles } from '@/lib/disponibilidad'
-import { resolverDisponibilidadFase2, minimoFinDeSemana } from '@/lib/whatsapp/fase2-disponibilidad'
+import { resolverDisponibilidadFase2, minimoFinDeSemana, procesoDeposito } from '@/lib/whatsapp/fase2-disponibilidad'
 
 const ADMIN_WHATSAPP_NUMBERS = (process.env.ALERT_WHATSAPP_NUMBER || '+525534815126,+527471028306')
   .split(',')
@@ -589,6 +589,8 @@ function detectFaq(textLower: string): string | null {
   if (/estacionamiento|parking|carro|auto|coche/.test(textLower)) return 'estacionamiento'
   if (/roof|terraza|evento|renta.*espacio|event/.test(textLower)) return 'rooftop'
   if (/segur|cámara|camara|acceso|cerradura/.test(textLower)) return 'seguridad'
+  if (/no (?:me )?(?:deja |puedo )?abrir|no abre|no (?:funciona|carga).*(?:link|enlace)|(?:link|enlace).*no (?:abre|funciona|carga)/.test(textLower)) return 'fotos_no_abren'
+  if (/visita|cita.*(?:ver|conocer)/.test(textLower)) return 'visitas'
   if (/foto|imagen|imágenes|imagenes|galer[ií]a|instalac/.test(textLower)) return 'fotos'
   return null
 }
@@ -608,6 +610,8 @@ function faqResponse(key: string, tipoRenta?: string | null): string {
     case 'mascotas': return MSG.mascotas()
     case 'rooftop': return MSG.rooftop()
     case 'seguridad': return MSG.seguridad()
+    case 'visitas': return 'Las visitas se coordinan con un asesor; él te confirma el día y horario disponible.'
+    case 'fotos_no_abren': return 'Si el enlace no abre, un asesor puede ayudarte a ver las fotos directamente por WhatsApp. ¿Quieres que un asesor te apoye?'
     case 'fotos': return '📸 Fotos por tipo de loft:\nChico: https://anaxagoras41suite.arqarri.com/loftChico.php\nMediano: https://anaxagoras41suite.arqarri.com/loftMediano.php\nGrande: https://anaxagoras41suite.arqarri.com/loftGrande.php'
     default: return MSG.noInfo()
   }
@@ -688,7 +692,7 @@ async function respuestaPrecio(
     `Para tu estancia del *${formatFecha(checkin)}* al *${formatFecha(checkout)}*` +
     `${personas ? ` (${personas} persona${personas !== 1 ? 's' : ''})` : ''}, el costo estimado ronda:\n\n` +
     `💰 *${formatRangoPrecio(rango)}*${tipo === 'mes' ? ' (mensual)' : ' (total de tu estancia)'}\n\n` +
-    tarifas + nota
+    tarifas + '\n\n' + procesoDeposito(tipo) + nota
   )
 }
 
@@ -854,8 +858,8 @@ export async function POST(request: Request) {
     if (!incoming) return Response.json({ ok: true, ignored: true })
 
     const { from, body, profileName, rawPayload } = incoming
-    const text = body.trim()
-    const textLower = text.toLowerCase()
+    let text = body.trim()
+    let textLower = text.toLowerCase()
 
     // Números de admin (Alexis, Harold) — solo abren su ventana de 24h para
     // recibir alertas, no son clientes: no se les crea lead ni se les contesta
@@ -1068,12 +1072,38 @@ export async function POST(request: Request) {
 
     // Loguear mensaje del usuario
     if (convId) {
-      await supabase.from('whatsapp_mensajes').insert([{
+      const { data: registrado, error: errorRegistro } = await supabase.from('whatsapp_mensajes').insert([{
         conversacion_id: convId,
         rol: 'usuario',
         contenido: text,
         raw_payload: rawPayload,
-      }])
+      }]).select('id, created_at').maybeSingle()
+
+      // Ventana persistida: funciona entre instancias serverless. Solo el último
+      // fragmento responde; los anteriores quedan registrados para unir el nombre.
+      if (fase === 'nombre' && extraerNombre(text)) {
+        if (errorRegistro || !registrado) throw new Error('No se pudo registrar el fragmento de nombre')
+        await new Promise((resolve) => setTimeout(resolve, 5000))
+        const { data: recientes, error } = await supabase.from('whatsapp_mensajes')
+          .select('id, rol, contenido, created_at').eq('conversacion_id', convId)
+          .gte('created_at', new Date(new Date(registrado.created_at).getTime() - 5000).toISOString())
+          .order('created_at', { ascending: false }).order('id', { ascending: false })
+        if (error) throw error
+        if (recientes?.[0]?.id !== registrado.id) return Response.json({ ok: true, nombre_agrupado: true })
+        const fragmentos = [text]
+        let anterior = new Date(registrado.created_at).getTime()
+        for (const m of (recientes || []).slice(1)) {
+          const instante = new Date(m.created_at).getTime()
+          if (m.rol !== 'usuario' || anterior - instante >= 5000 || !extraerNombre(m.contenido)) break
+          fragmentos.unshift(m.contenido)
+          anterior = instante
+        }
+        text = fragmentos.join(' ')
+        textLower = text.toLowerCase()
+        const { data: actual } = await supabase.from('whatsapp_conversaciones')
+          .select('fase, modo_humano').eq('id', convId).maybeSingle()
+        if (!actual || actual.modo_humano || actual.fase !== 'nombre') return Response.json({ ok: true, nombre_agrupado: true })
+      }
     }
 
     // Notificación push (app instalada en el teléfono) — un fallo aquí no debe romper la respuesta del bot.
@@ -1152,6 +1182,25 @@ export async function POST(request: Request) {
       response = ''
       nextFase = fase
 
+    } else if (fase === 'esperando_asesor') {
+      if (!cierreProtegido(contextoCierre) && esRespuestaNegativa(textLower)) {
+        if (leadId) await supabase.from('leads').update({ stage: 'no_interesado' }).eq('id', leadId)
+        response = `¡Con gusto! Quedamos al pendiente. Si más adelante tienes dudas o quieres retomar, aquí estamos. 😊`
+        nextFase = 'no_interesado'
+        cerrarConversacion = true
+      } else if (!['0', 'off', 'false'].includes((process.env.BOT_FAQ_EN_ESPERA || '').trim().toLowerCase())) {
+        const faq = detectFaq(textLower)
+        const permitidas = ['ubicacion', 'requisitos', 'fotos', 'fotos_no_abren', 'precios', 'visitas']
+        const { data: agente, error } = await supabase.from('whatsapp_mensajes')
+          .select('created_at').eq('conversacion_id', convId).eq('rol', 'agente')
+          .order('created_at', { ascending: false }).limit(1).maybeSingle()
+        if (!error && faq && permitidas.includes(faq) &&
+            (!agente || Date.now() - new Date(agente.created_at).getTime() >= 12 * 3600000)) {
+          const { data: lead } = leadId ? await supabase.from('leads').select('tipo_renta').eq('id', leadId).maybeSingle() : { data: null }
+          response = faqResponse(faq, lead?.tipo_renta) + '\n\nTu asesor te confirma disponibilidad en breve.'
+        }
+      }
+
     } else if (detectFaq(textLower) && !traeFecha && !(fase === 'personas' && extraerPersonas(text, true))) {
       const faq = detectFaq(textLower)!
       let nombreCapturado: string | null = null
@@ -1172,22 +1221,6 @@ export async function POST(request: Request) {
       const r = await manejarFaseFecha(fase === 'checkout' ? 'checkout' : 'checkin', { supabase, convId, leadId, from, text })
       response = r.response
       nextFase = r.nextFase
-
-    // Ya se avisó una vez que un asesor la va a contactar — no insistir con
-    // el flujo ni repetir el mensaje enlatado en cada mensaje que mande el
-    // lead mientras espera. Solo se responde si declina explícitamente;
-    // si no, se queda en silencio (se sigue logueando y alertando al admin
-    // más arriba, el bot simplemente no contesta).
-    } else if (fase === 'esperando_asesor') {
-      if (!cierreProtegido(contextoCierre) && esRespuestaNegativa(textLower)) {
-        if (leadId) await supabase.from('leads').update({ stage: 'no_interesado' }).eq('id', leadId)
-        response = `¡Con gusto! Quedamos al pendiente. Si más adelante tienes dudas o quieres retomar, aquí estamos. 😊`
-        nextFase = 'no_interesado'
-        cerrarConversacion = true
-      } else {
-        response = ''
-        nextFase = 'esperando_asesor'
-      }
 
     } else if (fase && ['checkin', 'checkout', 'confirmar_precios'].includes(fase) &&
       !traeFecha && (esRentaMensual(text) || preferencia || clasificarSinFecha(text) === 'sin_fecha_definida') &&
@@ -1257,7 +1290,7 @@ export async function POST(request: Request) {
         response = MSG.precios() + flowReminder('confirmar_precios')
         nextFase = 'confirmar_precios'
       } else {
-        response = MSG.errorConfirmarPrecios()
+        response = 'Con gusto. Las estancias menores a un mes se cobran por noche; la renta mensual se cobra completa. Compárteme tu fecha de llegada y salida para revisar disponibilidad.'
         nextFase = 'confirmar_precios'
       }
 
@@ -1377,7 +1410,7 @@ export async function POST(request: Request) {
       nextFase = 'confirmado'
       // Alerta: lead confirmó reserva (solo la primera vez — cuando stage sigue en 'cotizado')
       if (leadId) {
-        const { data: leadActual } = await supabase.from('leads').select('stage, nombre, tipo_renta, fecha_checkin, fecha_checkout, num_personas, loft_asignado').eq('id', leadId).maybeSingle()
+        const { data: leadActual } = await supabase.from('leads').select('stage, nombre, tipo_renta, fecha_checkin, fecha_checkout, num_personas').eq('id', leadId).maybeSingle()
         if (leadActual?.stage === 'cotizado') {
           await supabase.from('leads').update({ stage: 'deposito_pendiente' }).eq('id', leadId)
           await alertarAdmin(
@@ -1388,7 +1421,7 @@ export async function POST(request: Request) {
             `📅 *Checkin:* ${formatFecha(leadActual.fecha_checkin || '')}\n` +
             `📅 *Checkout:* ${formatFecha(leadActual.fecha_checkout || '')}\n` +
             `👥 *Personas:* ${leadActual.num_personas || '-'}\n` +
-            `🛏 *Loft:* ${leadActual.loft_asignado || 'pendiente'}\n\n` +
+            `🛏 *Loft:* pendiente de confirmar\n\n` +
             `El lead confirmó interés. Contactar para coordinar depósito.`
           )
         }
