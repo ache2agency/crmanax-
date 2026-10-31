@@ -1,5 +1,6 @@
 "use client";
 
+import { ocupacionesEnDia } from "@/lib/reservas/calendario";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 const MONTH_NAMES = [
@@ -8,6 +9,7 @@ const MONTH_NAMES = [
 ];
 
 const COLOR = {
+  "airbnb_ical": { bg: "#d1d5db", text: "#374151" },
   "airbnb-mes": { bg: "#F4B084", text: "#7c3400" },
   "airbnb-dia": { bg: "#F8CBAD", text: "#7c3400" },
   "directo-dia": { bg: "#C6E0B4", text: "#2d5016" },
@@ -34,6 +36,8 @@ export default function DisponibilidadPanel() {
   const [lofts, setLofts] = useState([]);
   const [reservas, setReservas] = useState([]);
   const [lastSync, setLastSync] = useState(null);
+  const [lastIcalSync, setLastIcalSync] = useState(null);
+  const [syncWarning, setSyncWarning] = useState("");
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [error, setError] = useState("");
@@ -52,6 +56,7 @@ export default function DisponibilidadPanel() {
       setLofts(json.lofts || []);
       setReservas(json.reservas || []);
       setLastSync(json.lastSync || null);
+      setLastIcalSync(json.lastIcalSync || null);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -91,6 +96,7 @@ export default function DisponibilidadPanel() {
       const response = await fetch("/api/reservas/sync", { method: "POST" });
       const json = await response.json();
       if (!response.ok) throw new Error(json.error || "Error sincronizando reservas");
+      setSyncWarning([json.excelError, json.airbnbError, ...(json.airbnb?.errores || [])].filter(Boolean).join(" · "));
       await cargar();
     } catch (err) {
       setError(err.message);
@@ -102,7 +108,7 @@ export default function DisponibilidadPanel() {
   const reservaEnDia = (loftId, day) => {
     const key = ymd(year, month, day);
     const enEsteLoft = reservasPorLoft[loftId] || [];
-    return enEsteLoft.filter((reserva) => reserva.fecha_checkin <= key && reserva.fecha_checkout > key);
+    return ocupacionesEnDia(enEsteLoft, key);
   };
 
   const days = Array.from({ length: daysInMonth }, (_, index) => index + 1);
@@ -142,12 +148,13 @@ export default function DisponibilidadPanel() {
         <div style={{ fontSize: 15, fontWeight: 600, color: "#111827", flex: 1, minWidth: 160 }}>
           {MONTH_NAMES[month]} {year}
           <span style={{ display: "block", color: "#64748b", fontSize: 10, fontWeight: 400, marginTop: 2 }}>
-            Actualizado: {formatSync(lastSync)}
+            Excel: {formatSync(lastSync)} · Airbnb: {formatSync(lastIcalSync)}
           </span>
         </div>
 
         <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
           {[
+            { key: "airbnb_ical", label: "Bloqueado en Airbnb" },
             { key: "airbnb-dia", label: "Airbnb dia" },
             { key: "airbnb-mes", label: "Airbnb mes" },
             { key: "directo-dia", label: "Directo dia" },
@@ -163,6 +170,17 @@ export default function DisponibilidadPanel() {
 
       {error && (
         <div style={{ padding: "10px 16px", background: "#fef2f2", color: "#991b1b", fontSize: 12 }}>{error}</div>
+      )}
+
+      {(syncWarning || lastIcalSync?.error || lastIcalSync?.avisos?.length > 0) && (
+        <div style={{ padding: "10px 16px", background: "#fffbeb", color: "#92400e", fontSize: 12 }}>
+          {(syncWarning || lastIcalSync?.error) && <div>{syncWarning || lastIcalSync.error}</div>}
+          {lastIcalSync?.avisos?.length > 0 && <details>
+            <summary>Revisar en Airbnb: {lastIcalSync.avisos.length} tramos ocupados en Excel que aparecen libres</summary>
+            <p>Bloquear estas fechas en Airbnb si la reserva sigue vigente. La salida no incluye noche.</p>
+            <ul>{lastIcalSync.avisos.map((a, i) => <li key={i}>{a.loft}: {a.fecha_checkin} → {a.fecha_checkout}</li>)}</ul>
+          </details>}
+        </div>
       )}
 
       <div style={{ flex: 1, overflowX: "auto", overflowY: "auto", minWidth: 0, maxWidth: "100%", WebkitOverflowScrolling: "touch" }}>
@@ -199,7 +217,7 @@ export default function DisponibilidadPanel() {
                     const ocupaciones = reservaEnDia(loft.id, day);
                     const reserva = ocupaciones[0];
                     const traslape = ocupaciones.length > 1;
-                    const color = reserva ? COLOR[`${reserva.canal}-${reserva.tipo_renta}`] : null;
+                    const color = reserva ? COLOR[reserva.origen === "airbnb_ical" ? "airbnb_ical" : `${reserva.canal}-${reserva.tipo_renta}`] : null;
                     return (
                       <td
                         key={day}
