@@ -119,3 +119,7 @@ Pídele al dueño del proyecto el archivo `.env.local` — sin él la app no con
 - `DEPOSITO_NOCHE_TEXTO` en `lib/whatsapp/fase2-disponibilidad.ts`: $649 MXN, confirmado por Alexis el 30-oct. Mensual: $5,000 vía transferencia, devolución de 5 a 3 días antes de finalizar el mes.
 - Nombres en varios mensajes: espera cinco segundos en fase `nombre`, agrupa fragmentos desde el historial persistido y solo el último responde. Esto agrega cinco segundos de espera a ese paso.
 - No hay URLs directas de imágenes de lofts en el código. Si un enlace no abre, ofrece apoyo de un asesor; envío de fotos pendiente de URLs autorizadas. No inventar detalles del baño ni horarios de visita.
+
+## Disponibilidad Airbnb iCal (tarea 8, 31-oct-2026)
+
+`lib/reservas/ical.ts` descarga/valida feeds privados y calcula avisos; `sync-ical.ts` conserva snapshots por loft mediante RPC transaccional. El endpoint de sync actualiza Excel y Airbnb independientemente. Ambas fuentes viven en `reservas`; bot y panel usan su unión, con prioridad visual del Excel. Migración v12 solo en archivo, SQL antes del código. Configuración, reversa y límites: `docs/AIRBNB_ICAL.md`. Nunca guardar URLs iCal ni datos de DESCRIPTION en git/logs.

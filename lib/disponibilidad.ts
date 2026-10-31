@@ -1,3 +1,4 @@
+import { ventanaIcal } from '@/lib/reservas/ical'
 import { createServiceRoleClient } from '@/utils/supabase/server'
 
 export type LoftDisponible = {
@@ -34,13 +35,16 @@ export async function loftsDisponibles({
 
   const { data: traslapes, error: reservasErr } = await supabase
     .from('reservas')
-    .select('loft_id')
+    .select('loft_id, origen, fecha_checkin, fecha_checkout')
     .lt('fecha_checkin', checkout)
     .gt('fecha_checkout', checkin)
 
   if (reservasErr) throw reservasErr
 
-  const ocupadosIds = new Set((traslapes || []).map((reserva) => reserva.loft_id).filter(Boolean))
+  const { limite } = ventanaIcal()
+  // Las filas iCal y Excel se consultan juntas. Incluso un bloqueo antiguo
+  // conservado por fallo de red deja de aplicarse fuera del horizonte.
+  const ocupadosIds = new Set((traslapes || []).filter(r => r.origen !== 'airbnb_ical' || (r.fecha_checkin < limite && checkin < limite)).map(r => r.loft_id).filter(Boolean))
 
   const cumpleCapacidad = (loft: LoftDisponible) => {
     if (!personas) return true
