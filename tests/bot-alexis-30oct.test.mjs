@@ -51,12 +51,12 @@ test('FAQ respeta modo humano, asesor en 12h y preguntas fuera de lista', async 
   for (const bloqueo of ['humano', 'agente', 'no_factual']) {
     const s = caso('esperando_asesor', { faqEspera: '1' })
     if (bloqueo === 'humano') s.db.whatsapp_conversaciones[0].modo_humano = true
-    if (bloqueo === 'agente') s.db.whatsapp_mensajes.push({ id: 'agente', conversacion_id: 'conv', rol: 'agente', created_at: '2026-10-30T11:00:00Z' })
+    if (bloqueo === 'agente') s.db.whatsapp_mensajes.push({ id: 'agente', conversacion_id: 'conv', rol: 'agente', created_at: new Date(Date.now() - 3600000).toISOString() })
     await s.enviar(bloqueo === 'no_factual' ? '¿Puedo negociar el contrato?' : 'Cuáles son los requisitos?')
     assert.equal(s.respuestas().length, 0)
   }
   const s = caso('esperando_asesor', { faqEspera: 'on' })
-  s.db.whatsapp_mensajes.push({ id: 'agente', conversacion_id: 'conv', rol: 'agente', created_at: '2026-10-29T23:00:00Z' })
+  s.db.whatsapp_mensajes.push({ id: 'agente', conversacion_id: 'conv', rol: 'agente', created_at: new Date(Date.now() - 13 * 3600000).toISOString() })
   await s.enviar('Cuáles son los requisitos?'); assert.equal(s.respuestas().length, 1)
 })
 
