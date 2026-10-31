@@ -60,7 +60,7 @@ export function leerFeeds(raw: string | undefined): Record<string, string> {
     if (!/^(PB-0[1-4]|1ER-1[1-4]|2DO-2[1-4])$/.test(loft)) throw new Error('Loft inválido en AIRBNB_ICAL_URLS')
     try {
       const url = new URL(value)
-      if (url.protocol !== 'https:' || !['www.airbnb.com', 'airbnb.com'].includes(url.hostname) || !url.pathname.startsWith('/calendar/ical/') || url.username || url.password) throw new Error()
+      if (url.protocol !== 'https:' || !/^(www\.)?airbnb\.[a-z]{2,3}(\.[a-z]{2})?$/.test(url.hostname) || !url.pathname.startsWith('/calendar/ical/') || url.username || url.password) throw new Error()
       result[loft] = url.toString()
     } catch { throw new Error(`URL iCal inválida para ${loft}`) }
   }

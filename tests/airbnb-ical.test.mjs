@@ -70,6 +70,10 @@ test('avisos: Excel ocupado y Airbnb libre, resta coberturas y une duplicados', 
 test('configuración rechaza URLs/lofts inválidos sin imprimir URL y acepta JSON ficticio', () => {
   assert.deepEqual(ical.leerFeeds(undefined), {})
   assert.deepEqual(ical.leerFeeds(JSON.stringify({ 'PB-01': fakeUrl })), { 'PB-01': fakeUrl })
+  // Los links reales de Anaxágoras son de airbnb.mx (?t=…), no de airbnb.com.
+  const mxUrl = 'https://www.airbnb.mx/calendar/ical/000.ics?t=FAKE_SECRET'
+  assert.deepEqual(ical.leerFeeds(JSON.stringify({ 'PB-01': mxUrl })), { 'PB-01': mxUrl })
+  for (const host of ['airbnb.mx.evil.com', 'evilairbnb.com', 'www.airbnb.evil']) assert.throws(() => ical.leerFeeds(JSON.stringify({ 'PB-01': `https://${host}/calendar/ical/0.ics` })))
   for (const value of ['[]', 'null', '{', JSON.stringify({ otro: fakeUrl }), JSON.stringify({ 'PB-01': 'http://localhost/private' })]) assert.throws(() => ical.leerFeeds(value), e => !e.message.includes('private'))
 })
 
