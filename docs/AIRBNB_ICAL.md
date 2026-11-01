@@ -26,3 +26,7 @@ Respuesta: `{ok, excel, excelError, airbnb, airbnbError}`; `airbnb` contiene `{s
 Volver al código anterior antes de aplicar `supabase/migration_v12_airbnb_ical_reversa.sql`. La reversa archiva las filas iCal en una tabla con RLS, retira esas filas de `reservas` y restaura la restricción anterior; conserva la bitácora. Ambos SQL se entregan solo como archivos, sujetos a revisión de Harold.
 
 `npm test` cubre feeds ficticios, privacidad, reintentos, fallo por loft, reemplazo vacío, horizonte, diferencias, celdas del panel, consulta real del bot y endpoints con autenticación y fuentes independientes. No se descargaron calendarios reales ni se sincronizó producción. La migración SQL requiere validación en un entorno de base de datos de prueba antes de aplicarla en producción.
+
+## Actualización 8-bis
+
+La regla sobre cola de ventana, frescura, avisos persistentes y activación v13 se actualiza en `docs/RESERVAS_CONFLICTOS.md`. Esta regla reemplaza la nota anterior de conservar toda ocupación dentro del horizonte: ahora se excluye la cola automática que cumple el patrón de la tarea 8-bis.

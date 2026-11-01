@@ -20,7 +20,7 @@ export async function syncReservasAirbnb() {
       },
     })
     if (!Object.keys(feeds).length) result.errores.push('AIRBNB_ICAL_URLS sin configurar; no se actualizaron calendarios')
-    const { error } = await db.from('reservas_sync').update({ finished_at: new Date().toISOString(), status: result.errores.length ? 'error' : 'success', rows_count: result.rows, error: result.errores.join('; ') || null, avisos: result.avisos }).eq('id', sync.id)
+    const { error } = await db.from('reservas_sync').update({ finished_at: new Date().toISOString(), status: result.errores.length ? 'error' : 'success', rows_count: result.rows, error: result.errores.join('; ') || null, avisos: result.avisos, feeds_ok: result.loftsOk }).eq('id', sync.id)
     if (error) throw new Error('No se pudo cerrar la bitácora iCal')
     return { syncId: sync.id, configurado: Object.keys(feeds).length > 0, ...result }
   } catch (error) {

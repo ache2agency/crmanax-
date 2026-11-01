@@ -1,4 +1,5 @@
-import { ventanaIcal } from '@/lib/reservas/ical'
+import { leerMonitorReservas } from '@/lib/reservas/monitor'
+import { ventanaIcal, esColaVentana } from '@/lib/reservas/ical'
 import { createServiceRoleClient } from '@/utils/supabase/server'
 
 export type LoftDisponible = {
@@ -22,7 +23,7 @@ export async function loftsDisponibles({
   checkin: string
   checkout: string
   personas?: number
-}): Promise<{ disponibles: LoftDisponible[]; ocupados: LoftDisponible[] }> {
+}): Promise<{ disponibles: LoftDisponible[]; ocupados: LoftDisponible[]; datosViejos: boolean }> {
   const supabase = createServiceRoleClient()
 
   const { data: lofts, error: loftsErr } = await supabase
@@ -44,7 +45,7 @@ export async function loftsDisponibles({
   const { limite } = ventanaIcal()
   // Las filas iCal y Excel se consultan juntas. Incluso un bloqueo antiguo
   // conservado por fallo de red deja de aplicarse fuera del horizonte.
-  const ocupadosIds = new Set((traslapes || []).filter(r => r.origen !== 'airbnb_ical' || (r.fecha_checkin < limite && checkin < limite)).map(r => r.loft_id).filter(Boolean))
+  const ocupadosIds = new Set((traslapes || []).filter(r => r.origen !== 'airbnb_ical' || (r.fecha_checkin < limite && checkin < limite && !esColaVentana(r.fecha_checkin, r.fecha_checkout))).map(r => r.loft_id).filter(Boolean))
 
   const cumpleCapacidad = (loft: LoftDisponible) => {
     if (!personas) return true
@@ -55,7 +56,10 @@ export async function loftsDisponibles({
   const todos = (lofts || []) as LoftDisponible[]
   const enRango = todos.filter(cumpleCapacidad)
 
+  let datosViejos = true
+  try { datosViejos = (await leerMonitorReservas()).frescura.vieja } catch { /* Sin frescura verificable, no afirmar disponibilidad. */ }
   return {
+    datosViejos,
     disponibles: enRango.filter((loft) => !ocupadosIds.has(loft.id)),
     ocupados: enRango.filter((loft) => ocupadosIds.has(loft.id)),
   }

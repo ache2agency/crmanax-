@@ -1,3 +1,4 @@
+import { actualizarMonitorReservas } from '@/lib/reservas/monitor'
 import { NextResponse } from 'next/server'
 import { createClient } from '@/utils/supabase/server'
 import { syncReservasDesdeDropbox } from '@/lib/reservas/sync'
@@ -35,8 +36,12 @@ export async function POST(request: Request) {
     let airbnb = null
     let airbnbError: string | null = null
     try { airbnb = await syncReservasAirbnb() } catch (error) { airbnbError = error instanceof Error ? error.message : 'Falló la sincronización iCal' }
-    const ok = !excelError && !airbnbError && !airbnb?.errores.length
-    return NextResponse.json({ ok, excel, excelError, airbnb, airbnbError }, { status: ok ? 200 : 207 })
+    let monitor = null
+    let monitorError: string | null = null
+    try { monitor = await actualizarMonitorReservas({ excelOk: !excelError, loftsOk: airbnb?.loftsOk || [] }) }
+    catch { monitorError = 'No se pudo actualizar el monitor de conflictos/frescura' }
+    const ok = !monitorError && !excelError && !airbnbError && !airbnb?.errores.length
+    return NextResponse.json({ ok, excel, excelError, airbnb, airbnbError, monitor, monitorError }, { status: ok ? 200 : 207 })
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error)
     return NextResponse.json({ error: detail }, { status: 500 })

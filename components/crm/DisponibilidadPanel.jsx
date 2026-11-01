@@ -1,5 +1,6 @@
 "use client";
 
+import EstadoDisponibilidad from "./EstadoDisponibilidad";
 import { ocupacionesEnDia } from "@/lib/reservas/calendario";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
@@ -20,19 +21,12 @@ function ymd(year, month0, day) {
   return `${year}-${String(month0 + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
 }
 
-function formatSync(sync) {
-  if (!sync?.finished_at) return "Sin sincronizar";
-  return new Intl.DateTimeFormat("es-MX", {
-    dateStyle: "medium",
-    timeStyle: "short",
-    timeZone: "America/Mexico_City",
-  }).format(new Date(sync.finished_at));
-}
-
 export default function DisponibilidadPanel() {
   const today = useMemo(() => new Date(), []);
   const [year, setYear] = useState(today.getFullYear());
   const [month, setMonth] = useState(today.getMonth());
+  const [monitor, setMonitor] = useState(null);
+  const [now, setNow] = useState(() => new Date());
   const [lofts, setLofts] = useState([]);
   const [reservas, setReservas] = useState([]);
   const [lastSync, setLastSync] = useState(null);
@@ -46,13 +40,15 @@ export default function DisponibilidadPanel() {
   const mesParam = `${year}-${String(month + 1).padStart(2, "0")}`;
   const daysInMonth = useMemo(() => new Date(year, month + 1, 0).getDate(), [year, month]);
 
-  const cargar = useCallback(async () => {
-    setLoading(true);
+  const cargar = useCallback(async (silencioso = false) => {
+    if (!silencioso) setLoading(true);
     setError("");
     try {
       const response = await fetch(`/api/reservas?mes=${mesParam}`);
       const json = await response.json();
       if (!response.ok) throw new Error(json.error || "Error cargando disponibilidad");
+      setMonitor(json.monitor || null);
+      setNow(new Date());
       setLofts(json.lofts || []);
       setReservas(json.reservas || []);
       setLastSync(json.lastSync || null);
@@ -64,7 +60,11 @@ export default function DisponibilidadPanel() {
     }
   }, [mesParam]);
 
-  useEffect(() => { cargar(); }, [cargar]);
+  useEffect(() => {
+    cargar();
+    const timer = setInterval(() => { setNow(new Date()); cargar(true); }, 60000);
+    return () => clearInterval(timer);
+  }, [cargar]);
 
   const reservasPorLoft = useMemo(() => {
     const map = {};
@@ -96,7 +96,7 @@ export default function DisponibilidadPanel() {
       const response = await fetch("/api/reservas/sync", { method: "POST" });
       const json = await response.json();
       if (!response.ok) throw new Error(json.error || "Error sincronizando reservas");
-      setSyncWarning([json.excelError, json.airbnbError, ...(json.airbnb?.errores || [])].filter(Boolean).join(" · "));
+      setSyncWarning([json.excelError, json.airbnbError, json.monitorError, ...(json.airbnb?.errores || [])].filter(Boolean).join(" · "));
       await cargar();
     } catch (err) {
       setError(err.message);
@@ -147,9 +147,7 @@ export default function DisponibilidadPanel() {
 
         <div style={{ fontSize: 15, fontWeight: 600, color: "#111827", flex: 1, minWidth: 160 }}>
           {MONTH_NAMES[month]} {year}
-          <span style={{ display: "block", color: "#64748b", fontSize: 10, fontWeight: 400, marginTop: 2 }}>
-            Excel: {formatSync(lastSync)} · Airbnb: {formatSync(lastIcalSync)}
-          </span>
+
         </div>
 
         <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
@@ -168,18 +166,15 @@ export default function DisponibilidadPanel() {
         </div>
       </div>
 
+      <EstadoDisponibilidad monitor={monitor} now={now} />
+
       {error && (
         <div style={{ padding: "10px 16px", background: "#fef2f2", color: "#991b1b", fontSize: 12 }}>{error}</div>
       )}
 
-      {(syncWarning || lastIcalSync?.error || lastIcalSync?.avisos?.length > 0) && (
+      {(syncWarning || lastSync?.error || lastIcalSync?.error) && (
         <div style={{ padding: "10px 16px", background: "#fffbeb", color: "#92400e", fontSize: 12 }}>
-          {(syncWarning || lastIcalSync?.error) && <div>{syncWarning || lastIcalSync.error}</div>}
-          {lastIcalSync?.avisos?.length > 0 && <details>
-            <summary>Revisar en Airbnb: {lastIcalSync.avisos.length} tramos ocupados en Excel que aparecen libres</summary>
-            <p>Bloquear estas fechas en Airbnb si la reserva sigue vigente. La salida no incluye noche.</p>
-            <ul>{lastIcalSync.avisos.map((a, i) => <li key={i}>{a.loft}: {a.fecha_checkin} → {a.fecha_checkout}</li>)}</ul>
-          </details>}
+          {syncWarning || [lastSync?.error, lastIcalSync?.error].filter(Boolean).join(" · ")}
         </div>
       )}
 
@@ -216,18 +211,21 @@ export default function DisponibilidadPanel() {
                   {days.map((day) => {
                     const ocupaciones = reservaEnDia(loft.id, day);
                     const reserva = ocupaciones[0];
+                    const fecha = ymd(year, month, day);
+                    const conflictos = (monitor?.conflictos || []).filter(c => c.loft_id === loft.id && c.tipo !== "solo_airbnb" && c.fecha_inicio <= fecha && c.fecha_fin > fecha);
                     const traslape = ocupaciones.length > 1;
                     const color = reserva ? COLOR[reserva.origen === "airbnb_ical" ? "airbnb_ical" : `${reserva.canal}-${reserva.tipo_renta}`] : null;
                     return (
                       <td
                         key={day}
                         onClick={() => reserva && setSelectedReserva(reserva)}
-                        title={reserva ? `${reserva.nombre_huesped} (${reserva.fecha_checkin} -> ${reserva.fecha_checkout})` : ""}
+                        title={[reserva ? `${reserva.nombre_huesped} (${reserva.fecha_checkin} -> ${reserva.fecha_checkout})` : "", ...conflictos.map(c => c.detalle)].filter(Boolean).join(" · ")}
                         style={{
                           borderBottom: "1px solid #f3f4f6", height: 24,
                           background: color ? color.bg : "transparent",
                           cursor: reserva ? "pointer" : "default",
                           position: "relative",
+                          boxShadow: conflictos.length ? "inset 0 0 0 2px #dc2626" : undefined,
                         }}
                       >
                         {traslape && (

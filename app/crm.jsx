@@ -81,6 +81,7 @@ export default function CRM() {
   const [leads, setLeads] = useState([]);
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState("convs");
+  useEffect(() => { if (new URLSearchParams(window.location.search).get("vista") === "disponibilidad") setView("disponibilidad"); }, []);
   const [selectedLead, setSelectedLead] = useState(null);
   const [showForm, setShowForm] = useState(false);
   const [showCitaForm, setShowCitaForm] = useState(false);
