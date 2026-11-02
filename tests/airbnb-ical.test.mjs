@@ -10,7 +10,7 @@ const now = new Date('2026-10-31T18:00:00Z')
 const block = (a, b) => ({ fecha_checkin: a, fecha_checkout: b })
 const event = (a, b, summary = 'Reserved') => `BEGIN:VEVENT\r\nDTSTART;VALUE=DATE:${a}\r\nDTEND;VALUE=DATE:${b}\r\nSUMMARY:${summary}\r\nDESCRIPTION:Reservation URL https://example.invalid/private\\nPhone 1234\r\nUID:private-id\r\nEND:VEVENT`
 const calendar = (...events) => `BEGIN:VCALENDAR\r\nVERSION:2.0\r\n${events.join('\r\n')}\r\nEND:VCALENDAR`
-const fakeUrl = 'https://www.airbnb.com/calendar/ical/000.ics?s=FAKE_SECRET'
+const fakeUrl = 'https://www.airbnb.mx/calendar/ical/000.ics?t=FAKE_SECRET'
 const response = text => new Response(text, { headers: { 'content-type': 'text/calendar' } })
 
 test('iCal reserva y bloqueo DATE: fechas exclusivas, sin datos privados ni UID', () => {
@@ -21,7 +21,7 @@ test('iCal reserva y bloqueo DATE: fechas exclusivas, sin datos privados ni UID'
 })
 
 test('iCal horizonte de 12 meses: omite futuros y pasados, recorta los que cruzan', () => {
-  assert.deepEqual(ical.parseIcal(calendar(event('20271031', '20271103'), event('20261001', '20261003'), event('20270727', '20271031'), event('20271030', '20271103')), now), [block('2027-07-27', '2027-10-31'), block('2027-10-30', '2027-10-31')])
+  assert.deepEqual(ical.parseIcal(calendar(event('20271031', '20271103'), event('20261001', '20261003'), event('20270727', '20271031'), event('20271030', '20271103')), now), [])
   assert.deepEqual(ical.parseIcal(calendar(event('20261029', '20261102')), now), [block('2026-10-31', '2026-11-02')])
 })
 
@@ -87,6 +87,7 @@ test('panel prioriza Excel sobre iCal sin falso traslape; muestra iCal solo en d
 
 function modulo(path, mocks) {
   const exports = {}
+  mocks = { '@/lib/reservas/monitor': { leerMonitorReservas: async () => ({ frescura: { vieja: false } }), actualizarMonitorReservas: async () => ({ frescura: { vieja: false } }) }, ...mocks }
   runInNewContext(ts.transpileModule(readFileSync(new URL(path, import.meta.url), 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText, { exports, Date, Set, URL, console, process: { env: { CRON_SECRET: 'cron-falso' } }, require(name) { if (!(name in mocks)) throw Error(`Import sin mock: ${name}`); return mocks[name] } })
   return exports
 }
@@ -99,7 +100,7 @@ test('consulta real de disponibilidad une Excel+iCal y fase2 evita cotizar loft 
     const q = { select() { return q }, eq() { return q }, order() { return q }, lt(key, value) { data = data.filter(r => r[key] < value); return q }, gt(key, value) { data = data.filter(r => r[key] > value); return q }, then(resolve) { return Promise.resolve({ data, error: null }).then(resolve) } }
     return q
   } }
-  const { loftsDisponibles } = modulo('../lib/disponibilidad.ts', { '@/utils/supabase/server': { createServiceRoleClient: () => db }, '@/lib/reservas/ical': { ventanaIcal: () => ical.ventanaIcal(now) } })
+  const { loftsDisponibles } = modulo('../lib/disponibilidad.ts', { '@/utils/supabase/server': { createServiceRoleClient: () => db }, '@/lib/reservas/ical': { ...ical, ventanaIcal: () => ical.ventanaIcal(now) } })
   const result = await loftsDisponibles({ checkin: '2026-11-02', checkout: '2026-11-04', personas: 1 })
   assert.deepEqual(Array.from(result.disponibles, l => l.id), ['tres'])
   assert.equal((await loftsDisponibles({ checkin: '2026-11-04', checkout: '2026-11-05', personas: 1 })).disponibles.some(l => l.id === 'dos'), true)
@@ -136,8 +137,8 @@ test('API del panel devuelve ambas fuentes sin detalle iCal y limita al horizont
   const data = {
     lofts: [{ id: 'uno', nombre: 'PB-01' }],
     reservas: [
-      { origen: 'excel', loft_id: 'uno', nombre_huesped: 'Demo', ...block('2027-10-29', '2027-11-05') },
-      { origen: 'airbnb_ical', loft_id: 'uno', nombre_huesped: 'oculto', telefono: '1234', notas: 'oculto', ...block('2027-10-29', '2027-11-05') },
+      { origen: 'excel', loft_id: 'uno', nombre_huesped: 'Demo', ...block('2027-06-01', '2027-11-05') },
+      { origen: 'airbnb_ical', loft_id: 'uno', nombre_huesped: 'oculto', telefono: '1234', notas: 'oculto', ...block('2027-06-01', '2027-11-05') },
       { origen: 'airbnb_ical', loft_id: 'uno', ...block('2027-10-31', '2027-11-05') },
     ],
     reservas_sync: [{ origen: 'excel', id: 'e' }, { origen: 'airbnb_ical', id: 'i', avisos: [] }],
@@ -147,7 +148,7 @@ test('API del panel devuelve ambas fuentes sin detalle iCal y limita al horizont
     const q = { select() { return q }, eq(key, value) { if (table !== 'lofts') rows = rows.filter(r => r[key] === value); return q }, lt() { return q }, gt() { return q }, order() { return q }, limit(n) { rows = rows.slice(0, n); return q }, then(resolve) { return Promise.resolve({ data: rows, error: null }).then(resolve) } }; return q
   } }
   const route = modulo('../app/api/reservas/route.ts', {
-    '@/lib/reservas/ical': { ventanaIcal: () => ical.ventanaIcal(now) },
+    '@/lib/reservas/ical': { ...ical, ventanaIcal: () => ical.ventanaIcal(now) },
     'next/server': { NextResponse: { json: (body, init = {}) => ({ body, status: init.status || 200 }) } },
     '@/utils/supabase/server': { createClient: async () => ({ auth: { getUser: async () => ({ data: { user: authenticated ? { id: 'demo' } : null } }) } }), createServiceRoleClient: () => db },
   })

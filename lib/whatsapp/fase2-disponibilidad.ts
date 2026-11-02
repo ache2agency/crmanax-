@@ -20,7 +20,7 @@ export type ConsultaDisponibilidad = (params: {
   checkin: string
   checkout: string
   personas: number
-}) => Promise<{ disponibles: LoftCandidato[]; ocupados: LoftCandidato[] }>
+}) => Promise<{ disponibles: LoftCandidato[]; ocupados: LoftCandidato[]; datosViejos?: boolean }>
 
 const PRIORIDAD_POR_PERSONAS: Record<'una' | 'dos', TipoLoft[]> = {
   una: ['chico', 'mediano', 'grande'],
@@ -178,10 +178,10 @@ export async function resolverDisponibilidadFase2({
     const total = precioTotalEstimado({ tipoRenta, tipoLoft, personas, noches }).texto
     const tipoTexto = nombreTipoLoft(tipoLoft)
     const response =
-      `¡Sí tenemos disponibilidad estimada! 🙌\n\n` +
-      `Para *${personas} persona${personas !== 1 ? 's' : ''}* del *${formatFecha(checkin)}* al *${formatFecha(checkout)}*, aparece disponible un *${tipoTexto}*.\n\n` +
+      (disponibilidad.datosViejos ? `Tengo una opción estimada pendiente de confirmar.\n\n` : `¡Sí tenemos disponibilidad estimada! 🙌\n\n`) +
+      `Para *${personas} persona${personas !== 1 ? 's' : ''}* del *${formatFecha(checkin)}* al *${formatFecha(checkout)}*, ${disponibilidad.datosViejos ? "podemos revisar un" : "aparece disponible un"} *${tipoTexto}*.\n\n` +
       `💰 *Total estimado:* ${total}\n\n` +
-      procesoDeposito(tipoRenta) + `\n\nUn asesor te confirma la disponibilidad y te ayuda a apartar. 🙌`
+      procesoDeposito(tipoRenta) + (disponibilidad.datosViejos ? `\n\nUn asesor te confirma disponibilidad antes de apartar.` : `\n\nUn asesor te confirma la disponibilidad y te ayuda a apartar. 🙌`)
     const alerta =
       `🆕 *Lead con disponibilidad estimada*\n\n` +
       `👤 *Nombre:* ${nombre}\n` +
@@ -207,7 +207,7 @@ export async function resolverDisponibilidadFase2({
 
   const response =
     `Por ahora no veo disponibilidad estimada para *${personas} persona${personas !== 1 ? 's' : ''}* del *${formatFecha(checkin)}* al *${formatFecha(checkout)}*. 😕\n\n` +
-    `${alternativa}\n\n` +
+    (disponibilidad.datosViejos ? `Un asesor revisa las opciones y te confirma disponibilidad.\n\n` : `${alternativa}\n\n`) +
     `De todos modos, un asesor te contacta para confirmar y proponerte opciones.`
   const alerta =
     `🟠 *Lead sin disponibilidad estimada*\n\n` +

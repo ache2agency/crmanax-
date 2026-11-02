@@ -10,6 +10,17 @@ export function ventanaIcal(now = new Date()) {
   return { hoy, limite }
 }
 
+// Regla acordada en 8-bis: la cola de ventana no representa una estancia.
+export function esColaVentana(start: string, end: string, now = new Date()) {
+  const { hoy, limite } = ventanaIcal(now)
+  const [y, m, d] = hoy.split('-').map(Number)
+  const ochoMeses = new Date(Date.UTC(y, m - 1 + 8, d)).toISOString().slice(0, 10)
+  // El snapshot del feed puede ser de días anteriores al horizonte móvil.
+  const finVentana = new Date(`${limite}T00:00:00Z`)
+  finVentana.setUTCDate(finVentana.getUTCDate() - 7)
+  return start > ochoMeses && end >= finVentana.toISOString().slice(0, 10)
+}
+
 function fechaDate(value: string) {
   if (!/^\d{8}$/.test(value)) throw new Error('iCal requiere fechas DATE')
   const iso = `${value.slice(0, 4)}-${value.slice(4, 6)}-${value.slice(6)}`
@@ -35,7 +46,7 @@ export function parseIcal(text: string, now = new Date()): Bloqueo[] {
       const end = fechaDate(event.DTEND || '')
       if (end <= start) throw new Error('Intervalo iCal inválido')
       // DTEND es exclusivo. Recortar al horizonte evita bloquear fuera de 12 meses.
-      if (end > hoy && start < limite) rows.push({ fecha_checkin: start < hoy ? hoy : start, fecha_checkout: end > limite ? limite : end })
+      if (!esColaVentana(start, end, now) && end > hoy && start < limite) rows.push({ fecha_checkin: start < hoy ? hoy : start, fecha_checkout: end > limite ? limite : end })
       event = null
     } else if (event) {
       const colon = line.indexOf(':')
@@ -114,6 +125,7 @@ export type IcalStore = {
 export async function sincronizarFeeds(feeds: Record<string, string>, lofts: { id: string; nombre: string }[], excel: Ocupacion[], store: IcalStore, now = new Date(), fetcher: typeof fetch = fetch) {
   const errores: string[] = []
   const avisos: AvisoAirbnb[] = []
+  const loftsOk: string[] = []
   let rows = 0
   const entries = Object.entries(feeds)
   for (let i = 0; i < entries.length; i += 3) {
@@ -123,6 +135,7 @@ export async function sincronizarFeeds(feeds: Record<string, string>, lofts: { i
     try {
       const blocks = await descargarIcal(url, now, fetcher)
       await store.replace(loft.id, blocks)
+      loftsOk.push(loft.id)
       rows += blocks.length
       avisos.push(...diasExcelLibresEnAirbnb(excel.filter(r => r.loft_id === loft.id), blocks, now).map(r => ({ loft: nombre, ...r })))
     } catch {
@@ -130,5 +143,5 @@ export async function sincronizarFeeds(feeds: Record<string, string>, lofts: { i
     }
     }))
   }
-  return { rows, errores, avisos }
+  return { rows, errores, avisos, loftsOk }
 }

@@ -123,3 +123,7 @@ Pídele al dueño del proyecto el archivo `.env.local` — sin él la app no con
 ## Disponibilidad Airbnb iCal (tarea 8, 31-oct-2026)
 
 `lib/reservas/ical.ts` descarga/valida feeds privados y calcula avisos; `sync-ical.ts` conserva snapshots por loft mediante RPC transaccional. El endpoint de sync actualiza Excel y Airbnb independientemente. Ambas fuentes viven en `reservas`; bot y panel usan su unión, con prioridad visual del Excel. Migración v12 solo en archivo, SQL antes del código. Configuración, reversa y límites: `docs/AIRBNB_ICAL.md`. Nunca guardar URLs iCal ni datos de DESCRIPTION en git/logs.
+
+## Conflictos y frescura — 8-bis
+
+Detector puro en `lib/reservas/conflictos.ts`, persistencia/dedupe transaccional en SQL v13 y orquestación en `lib/reservas/monitor.ts`. Panel con conflictos y último éxito por feed; bot evita afirmar disponibilidad con fuentes >2 h. Notifica por push, sin WhatsApp. Sync invoca el monitor al terminar; endpoint `/api/reservas/monitor` protegido por CRON_SECRET permite detectar que el sync dejó de correr (programador externo pendiente). SQL antes del código. Detalles: `docs/RESERVAS_CONFLICTOS.md`; migración/reversa solo en archivos, con validación local PGlite.

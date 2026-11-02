@@ -1,4 +1,5 @@
-import { ventanaIcal } from '@/lib/reservas/ical'
+import { leerMonitorReservas } from '@/lib/reservas/monitor'
+import { ventanaIcal, esColaVentana } from '@/lib/reservas/ical'
 import { NextResponse } from 'next/server'
 import { createClient, createServiceRoleClient } from '@/utils/supabase/server'
 
@@ -50,11 +51,12 @@ export async function GET(request: Request) {
     if (icalSyncErr) throw icalSyncErr
 
     const { limite } = ventanaIcal()
-    const visibles = (reservas || []).filter(r => r.origen !== 'airbnb_ical' || r.fecha_checkin < limite).map(r => r.origen === 'airbnb_ical' ? {
+    const visibles = (reservas || []).filter(r => r.origen !== 'airbnb_ical' || (r.fecha_checkin < limite && !esColaVentana(r.fecha_checkin, r.fecha_checkout))).map(r => r.origen === 'airbnb_ical' ? {
       ...r, fecha_checkout: r.fecha_checkout > limite ? limite : r.fecha_checkout,
       nombre_huesped: 'Bloqueado en Airbnb (sin detalle)', telefono: null, notas: null,
     } : r)
-    return NextResponse.json({ lofts, reservas: visibles, lastSync: syncs?.[0] || null, lastIcalSync: icalSyncs?.[0] || null })
+    const monitor = await leerMonitorReservas()
+    return NextResponse.json({ monitor, lofts, reservas: visibles, lastSync: syncs?.[0] || null, lastIcalSync: icalSyncs?.[0] || null })
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error)
     return NextResponse.json({ error: detail }, { status: 500 })
