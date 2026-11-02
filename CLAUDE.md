@@ -130,4 +130,9 @@ Detector puro en `lib/reservas/conflictos.ts`, persistencia/dedupe transaccional
 
 ## Respuestas rápidas — tarea 9
 
-Textos aprobados y catálogo del panel en `lib/anaxagoras/textos.js`; reconocimiento determinista de FAQ en `lib/anaxagoras/faq.js`. Panel y bot comparten las políticas nuevas, depósito de noche por reservación y requisitos mensuales. FAQ conservan fase/datos y respetan control humano/flag/12 h del asesor. Más de 2 huéspedes: informar cargo adicional y pedir confirmación de capacidad al asesor, sin cotizar automáticamente por encima del catálogo. Detalles y solapamiento con PR #57 (sin mezclarlo): `docs/RESPUESTAS_RAPIDAS.md`.
+Textos aprobados y catálogo del panel en `lib/anaxagoras/textos.js`; reconocimiento determinista de FAQ en `lib/anaxagoras/faq.js`. Panel y bot comparten las políticas nuevas, depósito de noche por reservación y requisitos mensuales. FAQ conservan fase/datos y respetan control humano/flag/12 h del asesor. Más de 2 huéspedes: informar cargo adicional y pedir confirmación de capacidad al asesor, sin cotizar automáticamente por encima del catálogo. Rebasado sobre main con #57 integrado (9-bis); conserva frescura y condiciones compartidas. Detalles: `docs/RESPUESTAS_RAPIDAS.md`.
+
+
+## Fechas y FAQ — tarea 9-bis
+
+En cotización las fechas válidas se procesan antes de las FAQ y se añade su respuesta aprobada sin duplicar horario/impuestos. Pregunta de entrada con hora explícita no cambia fechas; visitar familia/ciudad/trabajo no es visitar el loft. Nombre explícito y personas se capturan aunque haya FAQ. Espera del asesor, reservas aceptadas y control humano conservan su comportamiento. Validación: `tests/fechas-con-faq-9bis.test.mjs`; sin SQL ni deploy.

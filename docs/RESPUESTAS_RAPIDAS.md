@@ -14,6 +14,14 @@ El cargo de $280 por persona adicional se informa, pero no amplía la capacidad 
 
 `npm test`, TypeScript y build Webpack, con servicios simulados. Sin migraciones, secretos ni envíos reales. Después de revisar el PR, Harold decide merge/deploy y prueba las FAQ desde una conversación de prueba autorizada.
 
-## Relación con PR #57
+## Tarea 9-bis — fechas y FAQ (2-nov-2026)
 
-Este trabajo nace de `origin/main` `3de0b2b`, sin incluir PR #57. Hay solapamiento en el bloque de respuesta de `lib/whatsapp/fase2-disponibilidad.ts`: la Tarea 9 añade las condiciones compartidas de la cotización, mientras #57 cambia esa redacción según `datosViejos`. Al integrar ambos, el revisor debe conservar el tratamiento de frescura de #57 y los textos compartidos de esta tarea. Aquí no se mezcla, rebasea ni modifica #57. `CLAUDE.md` también recibe una nota nueva; su bloque de #57 debe conservarse cuando se integren ambos.
+PR #58 rebasado sobre `origin/main eb4b71e`, que ya incluye #57. La resolución conserva `datosViejos`, sus dos textos prudentes, `TEXTOS.proceso_noche`, el depósito compartido, condiciones de estancia y el control de capacidad para más de dos huéspedes. Las notas de 8-bis y 9 permanecen en CLAUDE.md.
+
+En el flujo de cotización, fechas/duración tienen prioridad sobre una FAQ. El mensaje captura nombre explícito, fechas y personas; consulta disponibilidad como antes y añade la respuesta aprobada en el mismo envío. Horario e impuestos ya presentes en la cotización no se duplican. Si faltan huéspedes o salida se pide el dato antes de calcular un total; una fecha inválida pide corrección sin consultar disponibilidad.
+
+«Llego mañana … 3 noches» es una estancia. La excepción de horario requiere pregunta de entrada/llegada con hora explícita y sin rango/duración de estancia: «¿a qué hora puedo entrar mañana a las 8 am?» conserva las fechas guardadas. Los últimos tres meses de los estados de cuenta siguen siendo información documental. «Visitar a mi familia/ciudad/trabajo» no activa visitas ni persona adicional; preguntar por conocer el loft o visitas permitidas sí.
+
+Se conserva el comportamiento de espera del asesor y de reservas aceptadas: no recotiza esas conversaciones. Las FAQ sin fechas conservan fase; siguen vigentes modo humano, flag de FAQ y atención humana en las últimas 12 h. No hay cambios de SQL, crons ni despliegue.
+
+Pruebas específicas en `tests/fechas-con-faq-9bis.test.mjs`: las tres frases reales por cinco fases, preguntas de horario, factura con nombre, dato de personas pendiente, fechas inválidas y cotizaciones frescas/viejas por noche/mes con depósito una sola vez y condiciones completas.

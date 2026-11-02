@@ -1,5 +1,5 @@
 import { TEXTOS, textoAprobado, condicionesEstancia } from '@/lib/anaxagoras/textos'
-import { detectarFaqAprobada } from '@/lib/anaxagoras/faq'
+import { detectarFaqAprobada, esPreguntaHorarioEntrada } from '@/lib/anaxagoras/faq'
 import { createServiceRoleClient } from '@/utils/supabase/server'
 import {
   getMetaConfig,
@@ -595,7 +595,6 @@ function detectFaq(textLower: string): string | null {
   if (/roof|terraza|evento|renta.*espacio|event/.test(textLower)) return 'rooftop'
   if (/segur|cámara|camara|acceso|cerradura/.test(textLower)) return 'seguridad'
   if (/no (?:me )?(?:deja |puedo )?abrir|no abre|no (?:funciona|carga).*(?:link|enlace)|(?:link|enlace).*no (?:abre|funciona|carga)/.test(textLower)) return 'fotos_no_abren'
-  if (/visita|cita.*(?:ver|conocer)/.test(textLower)) return 'visitas'
   if (/foto|imagen|imágenes|imagenes|galer[ií]a|instalac/.test(textLower)) return 'fotos'
   return null
 }
@@ -1132,8 +1131,14 @@ export async function POST(request: Request) {
     contextoCierre.fase = fase
     const cerrarPorMensaje = esCierreConversacion(text, contextoCierre)
     const preferencia = preferenciaLoft(text)
-    if (leadId && !cerrarPorMensaje && !detectarFaqAprobada(textLower)) {
-      if (esRentaMensual(text)) await supabase.from('leads').update({ tipo_renta: 'mes' }).eq('id', leadId)
+    if (leadId && !cerrarPorMensaje) {
+      // Capturar datos explícitos aunque el mensaje también pregunte una FAQ.
+      const nombreExplicito = text.match(/\b(?:me llamo|mi nombre es|soy)\s+([^,;!?¿\n]+)/i)?.[1]
+      const nombreCapturado = nombreExplicito ? extraerNombre(nombreExplicito) : null
+      if (nombreCapturado) await supabase.from('leads').update({ nombre: nombreCapturado }).eq('id', leadId)
+      const personasCapturadas = extraerPersonas(text)
+      if (personasCapturadas) await supabase.from('leads').update({ num_personas: personasCapturadas }).eq('id', leadId)
+      if (esRentaMensual(text) && (!detectarFaqAprobada(textLower) || extraerFechas(text, hoyISO()).fechas.length > 0)) await supabase.from('leads').update({ tipo_renta: 'mes' }).eq('id', leadId)
       if (preferencia) {
         const { data: lead } = await supabase.from('leads').select('notas').eq('id', leadId).maybeSingle()
         const nota = `Preferencia de loft: ${preferencia}`
@@ -1150,7 +1155,12 @@ export async function POST(request: Request) {
     // En los pasos de fecha, un mensaje que trae fecha/duración ("del 15 al
     // 19, ¿cuánto sale?") se procesa como fecha, no como pregunta frecuente.
     const datosFecha = extraerFechas(text, hoyISO())
-    const traeFecha = datosFecha.fechas.length > 0 || !!datosFecha.duracion || !!fechaExplicitaInvalida(text)
+    const faqEntrada = detectFaq(textLower)
+    const soloHorario = esPreguntaHorarioEntrada(text) && datosFecha.fechas.length <= 1 && !datosFecha.duracion
+    const duracionDocumental = faqEntrada === 'comprobante_ingresos' && !datosFecha.fechas.length
+    const traeFecha = !soloHorario && !duracionDocumental && (datosFecha.fechas.length > 0 || !!datosFecha.duracion || !!fechaExplicitaInvalida(text))
+    let procesoFechas = false
+    const puedeCotizarFechas = !cierreProtegido(contextoCierre) && (!fase || ['saludo', 'nombre', 'confirmar_precios', 'tipo_renta', 'personas', 'checkin', 'checkout', 'confirmar_interes', 'tipo_loft'].includes(fase))
 
     // Comando global: reiniciar en cualquier fase
     if (textLower === 'reiniciar') {
@@ -1188,6 +1198,13 @@ export async function POST(request: Request) {
       response = ''
       nextFase = fase
 
+    } else if (traeFecha && puedeCotizarFechas) {
+      procesoFechas = true
+      const esLlegada = /\b(llego|llegamos|llegada|desde|check\s*in)\b/i.test(text)
+      const r = await manejarFaseFecha(fase === 'checkout' && !esLlegada ? 'checkout' : 'checkin', { supabase, convId, leadId, from, text })
+      response = r.response
+      nextFase = r.nextFase
+
     } else if (fase === 'esperando_asesor') {
       if (!cierreProtegido(contextoCierre) && esRespuestaNegativa(textLower)) {
         if (leadId) await supabase.from('leads').update({ stage: 'no_interesado' }).eq('id', leadId)
@@ -1207,7 +1224,7 @@ export async function POST(request: Request) {
         }
       }
 
-    } else if (detectFaq(textLower) && (!traeFecha || detectarFaqAprobada(textLower)) && !(fase === 'personas' && extraerPersonas(text, true) && !pareceInterrogacion(text))) {
+    } else if (detectFaq(textLower) && (!traeFecha || !puedeCotizarFechas) && !(fase === 'personas' && extraerPersonas(text, true) && !pareceInterrogacion(text))) {
       const faq = detectFaq(textLower)!
       let nombreCapturado: string | null = null
       if (faq === 'precios' && (!fase || ['saludo', 'nombre'].includes(fase))) {
@@ -1222,11 +1239,6 @@ export async function POST(request: Request) {
       nextFase = nombreCapturado ? 'confirmar_precios' : (fase || 'nombre')
       response = (nombreCapturado ? `Mucho gusto, *${nombreCapturado}*!\n\n` : '') +
         (faq === 'precios' ? await respuestaPrecio(supabase, leadId) : faqResponse(faq, tipo)) + flowReminder(nextFase)
-
-    } else if (traeFecha && (!fase || ['saludo', 'nombre', 'confirmar_precios', 'tipo_renta', 'personas', 'checkin', 'checkout'].includes(fase))) {
-      const r = await manejarFaseFecha(fase === 'checkout' ? 'checkout' : 'checkin', { supabase, convId, leadId, from, text })
-      response = r.response
-      nextFase = r.nextFase
 
     } else if (fase && ['checkin', 'checkout', 'confirmar_precios'].includes(fase) &&
       !traeFecha && (esRentaMensual(text) || preferencia || clasificarSinFecha(text) === 'sin_fecha_definida') &&
@@ -1439,7 +1451,7 @@ export async function POST(request: Request) {
       nextFase = 'tipo_renta'
     }
 
-    if (traeFecha && !detectarFaqAprobada(textLower) && !fechaExplicitaInvalida(text) && ['checkout', 'personas'].includes(nextFase || '')) {
+    if (procesoFechas && !fechaExplicitaInvalida(text) && ['checkout', 'personas'].includes(nextFase || '')) {
       const personas = extraerPersonas(text)
       if (personas && leadId) await supabase.from('leads').update({ num_personas: personas }).eq('id', leadId)
       if (nextFase === 'personas') {
@@ -1451,6 +1463,15 @@ export async function POST(request: Request) {
           nextFase = r.nextFase
         }
       }
+    }
+
+    // La cotización ya incluye horario/impuestos: no duplicar el texto aprobado.
+    if (procesoFechas && faqEntrada && response) {
+      const { data: lead } = leadId
+        ? await supabase.from('leads').select('tipo_renta').eq('id', leadId).maybeSingle()
+        : { data: null }
+      const respuestaFaq = faqResponse(faqEntrada, lead?.tipo_renta)
+      if (!response.includes(respuestaFaq)) response += '\n\n' + respuestaFaq
     }
 
     // Evitar respuestas idénticas consecutivas, conservando los cambios de estado.
