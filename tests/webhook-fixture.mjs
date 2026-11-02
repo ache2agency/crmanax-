@@ -4,6 +4,8 @@ import { readFileSync, readdirSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { runInNewContext } from 'node:vm'
 import ts from 'typescript'
+import * as textos from '../lib/anaxagoras/textos.js'
+import * as faq from '../lib/anaxagoras/faq.js'
 import * as parsers from '../lib/whatsapp/bot-parsers.ts'
 import * as disponibilidad from '../lib/whatsapp/fase2-disponibilidad.ts'
 
@@ -77,6 +79,8 @@ export function escenario(fase = 'checkin', whatsapp = '+523112694172', opciones
   runInNewContext(source + '\nexports.catalogoPrueba = MSG.precios() + flowReminder("confirmar_precios");', {
     exports, process: { env: { ...process.env, BOT_FAQ_EN_ESPERA: opciones.faqEspera } }, Response, setTimeout: opciones.setTimeout || ((fn) => { fn() }), Date: opciones.hoy ? class extends Date { constructor(...args) { super(...(args.length ? args : [opciones.hoy + 'T12:00:00Z'])) } } : Date, console: { log() {}, error: console.error },
     require(name) {
+      if (name === '@/lib/anaxagoras/textos') return textos
+      if (name === '@/lib/anaxagoras/faq') return faq
       if (name.endsWith('/bot-parsers')) return opciones.hoy ? { ...parsers, hoyISO: () => opciones.hoy } : parsers
       if (name === '@/utils/supabase/server') return { createServiceRoleClient: () => supabase }
       if (name.endsWith('/provider')) return { normalizePhoneNumber: n => n.startsWith('+') ? n : `+${n}`, sendMetaWhatsAppMessage: async msg => enviados.push(msg) }
@@ -84,7 +88,7 @@ export function escenario(fase = 'checkin', whatsapp = '+523112694172', opciones
       if (name === 'next/server') return { after() {} }
       if (name.endsWith('/seguimiento')) return {}
       if (opciones.consultar && name === '@/lib/disponibilidad') return { loftsDisponibles: opciones.consultar }
-      if (opciones.consultar && name.endsWith('/fase2-disponibilidad')) return disponibilidad
+      if (name.endsWith('/fase2-disponibilidad')) return { ...disponibilidad, resolverDisponibilidadFase2: opciones.consultar ? disponibilidad.resolverDisponibilidadFase2 : () => { throw Error('La disponibilidad no debe consultarse en estos casos') } }
       if (name === '@/lib/disponibilidad' || name.endsWith('/fase2-disponibilidad')) return new Proxy({}, { get() { return () => { throw Error('La disponibilidad no debe consultarse en estos casos') } } })
       return require(name)
     },

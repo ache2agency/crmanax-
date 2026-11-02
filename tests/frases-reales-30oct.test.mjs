@@ -32,7 +32,7 @@ test('desinterés explícito sigue cerrando', async () => {
 
 test('renta por año: aclara que no hay renta tradicional', async () => {
   const { r } = await responder('confirmar_precios', 'Y bueno busco algo más permanente, rentas por año y a largo plazo')
-  assert.match(r, /no tenemos contratos de renta tradicional/)
+  assert.match(r, /no manejamos rentas tradicionales por año/)
 })
 
 test('nombre con teléfono pegado y quien no quiere hablar con IA', async () => {

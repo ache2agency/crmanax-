@@ -19,7 +19,7 @@ test('seguimiento por fase respeta fechas, personas, cotización y cierres', () 
 })
 
 test('cotizaciones por noche y mes incluyen proceso y depósito correcto', async () => {
-  for (const [checkout, patron] of [['2026-11-13', /Depósito en garantía para apartar: \$649 MXN[\s\S]*INE[\s\S]*no se toma a cuenta/], ['2026-11-30', /\$5,000\.00[\s\S]*transferencia[\s\S]*5 a 3 días/]]) {
+  for (const [checkout, patron] of [['2026-11-13', /INE[\s\S]*no se toma a cuenta[\s\S]*\$649\.00 pesos por reservación/], ['2026-11-30', /\$5,000\.00[\s\S]*transferencia[\s\S]*5 a 3 días/]]) {
     const r = await resolverDisponibilidadFase2({ nombre: 'Ana', whatsapp: 'simulado', checkin: '2026-10-31', checkout, personas: 1, consultar: opciones.consultar })
     assert.match(r.response, patron)
   }
@@ -32,7 +32,7 @@ test('texto libre de confirmar_precios siempre responde; medio mes se cobra por 
     assert.ok(s.respuestas()[0]?.body, text)
     if (text.includes('medio mes') || text.includes('15 días')) assert.match(s.respuestas()[0].body, /15 noches/)
     if (text.startsWith('Del')) { assert.equal(s.db.leads[0].fecha_checkout, '2026-11-13'); assert.equal(s.db.whatsapp_conversaciones[0].fase, 'personas') }
-    if (text.includes('por año')) assert.match(s.respuestas()[0].body, /no tenemos contratos de renta tradicional/)
+    if (text.includes('por año')) assert.match(s.respuestas()[0].body, /no manejamos rentas tradicionales por año/)
   }
 })
 
