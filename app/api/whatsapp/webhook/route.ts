@@ -1,3 +1,5 @@
+import { TEXTOS, textoAprobado, condicionesEstancia } from '@/lib/anaxagoras/textos'
+import { detectarFaqAprobada, esPreguntaHorarioEntrada } from '@/lib/anaxagoras/faq'
 import { createServiceRoleClient } from '@/utils/supabase/server'
 import {
   getMetaConfig,
@@ -536,6 +538,7 @@ const MSG = {
     `👥 *Personas:* ${personas}\n` +
     `🏷 *Renta:* ${tipo === 'noche' ? 'Por noche' : 'Por mes'}\n` +
     `💰 *Costo estimado:* ${calcularPrecio(tipo, loft, personas, checkin, checkout)}\n\n` +
+    procesoDeposito(tipo === 'mes' ? 'mes' : 'noche') + '\n\n' + condicionesEstancia(tipo) + '\n\n' +
     `¿Confirmas tu interés? Verificaremos disponibilidad y un asesor te contactará para finalizar tu reserva. ✅`,
 
   asesorActivo: () =>
@@ -554,7 +557,7 @@ const MSG = {
     `No contamos con estacionamiento propio, pero hay opciones cerca:\n\n🅿️ Estacionamientos públicos en la zona\n🅿️ Parque Delta (a pasos del edificio)\n\n¿Hay algo más en que te pueda ayudar?`,
 
   mascotas: () =>
-    `Gracias por consultarnos 😊 Anaxágoras 41 no es pet friendly, ya que nuestras instalaciones no están acondicionadas para recibir mascotas. Lamentamos no poder ofrecerte esta opción.`,
+    TEXTOS.mascotas,
 
   rooftop: () =>
     `*Roof Top Anaxágoras* — Eventos\n\nEspacio semitechado ideal para eventos pequeños, brunchs y reuniones.\n\n👥 Capacidad: hasta 20 personas\n⏰ Horario: 9:00 a.m. – 12:00 a.m.\n💰 Tarifa: $6,000 MXN (7 horas)\n🔒 Depósito: $2,000 MXN (se devuelve al día siguiente)\n\nIncluye: mobiliario, barra con tarja, bocina, proyector y sanitario.\n\n_No se permite equipo de audio externo ni grupos musicales._\n\nPara reservar el Roof Top escríbenos al *+52 55 3481 5126*.`,
@@ -578,6 +581,8 @@ const MSG = {
 // ─── FAQ detector ─────────────────────────────────────────────────────────────
 
 function detectFaq(textLower: string): string | null {
+  const aprobada = detectarFaqAprobada(textLower)
+  if (aprobada) return aprobada
   if (/(renta|rentas|rentar|contrato|busco|buscando).{0,40}(anual|por (un )?a[ñn]o|largo plazo|permanente|tradicional)/.test(textLower)) return 'renta_anual'
   if (/\b(?:impuestos?|iva|factura)\b/i.test(textLower)) return 'impuestos'
   if (/dep[oó]sito|garant[ií]a/i.test(textLower)) return 'deposito'
@@ -590,27 +595,27 @@ function detectFaq(textLower: string): string | null {
   if (/roof|terraza|evento|renta.*espacio|event/.test(textLower)) return 'rooftop'
   if (/segur|cámara|camara|acceso|cerradura/.test(textLower)) return 'seguridad'
   if (/no (?:me )?(?:deja |puedo )?abrir|no abre|no (?:funciona|carga).*(?:link|enlace)|(?:link|enlace).*no (?:abre|funciona|carga)/.test(textLower)) return 'fotos_no_abren'
-  if (/visita|cita.*(?:ver|conocer)/.test(textLower)) return 'visitas'
   if (/foto|imagen|imágenes|imagenes|galer[ií]a|instalac/.test(textLower)) return 'fotos'
   return null
 }
 
 function faqResponse(key: string, tipoRenta?: string | null): string {
+  const aprobada = textoAprobado(key)
+  if (aprobada) return aprobada
   switch (key) {
-    case 'impuestos': return 'Los precios no incluyen impuestos; si necesitas factura es más IVA.'
-    case 'renta_anual': return 'Por ahora manejamos estancias por noche y rentas mensuales; no tenemos contratos de renta tradicional por año. 🙏'
-    case 'deposito': return 'Un asesor te confirma el monto del depósito según el loft y las fechas.'
-    case 'requisitos': return tipoRenta === 'noche'
-      ? 'Para estancias cortas: fechas definidas → depósito en garantía para apartar → foto de INE por ambos lados → a tu llegada se paga la reserva (el depósito no se toma a cuenta).'
-      : '1. Enviar los documentos al correo anaxagoras41suite@gmail.com\n2. Una vez con el visto bueno de los documentos se hace la transferencia del depósito en garantía (con esto se aparta el loft y las fechas)\n3. A tu llegada se paga en efectivo la renta que va corriendo.\nhttps://anaxagoras41suite.arqarri.com/#blog'
+    case 'renta_anual': return TEXTOS.contrato_mensual
+    case 'deposito': return tipoRenta === 'mes' ? procesoDeposito('mes')
+      : tipoRenta === 'noche' ? TEXTOS.deposito_noche
+      : `Por noche: ${TEXTOS.deposito_noche}\n\nPor mes: ${procesoDeposito('mes')}`
+    case 'requisitos': return tipoRenta === 'noche' ? TEXTOS.proceso_noche : TEXTOS.requisitos_mensuales
     case 'precios': return MSG.precios()
-    case 'ubicacion': return MSG.ubicacion()
+    case 'ubicacion': return TEXTOS.ubicacion_unica + '\n\n' + MSG.ubicacion()
     case 'servicios': return MSG.servicios()
     case 'estacionamiento': return MSG.estacionamiento()
     case 'mascotas': return MSG.mascotas()
     case 'rooftop': return MSG.rooftop()
     case 'seguridad': return MSG.seguridad()
-    case 'visitas': return 'Las visitas se coordinan con un asesor; él te confirma el día y horario disponible.'
+    case 'visitas': return TEXTOS.visitas
     case 'fotos_no_abren': return 'Si el enlace no abre, un asesor puede ayudarte a ver las fotos directamente por WhatsApp. ¿Quieres que un asesor te apoye?'
     case 'fotos': return '📸 Fotos por tipo de loft:\nChico: https://anaxagoras41suite.arqarri.com/loftChico.php\nMediano: https://anaxagoras41suite.arqarri.com/loftMediano.php\nGrande: https://anaxagoras41suite.arqarri.com/loftGrande.php'
     default: return MSG.noInfo()
@@ -1127,7 +1132,13 @@ export async function POST(request: Request) {
     const cerrarPorMensaje = esCierreConversacion(text, contextoCierre)
     const preferencia = preferenciaLoft(text)
     if (leadId && !cerrarPorMensaje) {
-      if (esRentaMensual(text)) await supabase.from('leads').update({ tipo_renta: 'mes' }).eq('id', leadId)
+      // Capturar datos explícitos aunque el mensaje también pregunte una FAQ.
+      const nombreExplicito = text.match(/\b(?:me llamo|mi nombre es|soy)\s+([^,;!?¿\n]+)/i)?.[1]
+      const nombreCapturado = nombreExplicito ? extraerNombre(nombreExplicito) : null
+      if (nombreCapturado) await supabase.from('leads').update({ nombre: nombreCapturado }).eq('id', leadId)
+      const personasCapturadas = extraerPersonas(text)
+      if (personasCapturadas) await supabase.from('leads').update({ num_personas: personasCapturadas }).eq('id', leadId)
+      if (esRentaMensual(text) && (!detectarFaqAprobada(textLower) || extraerFechas(text, hoyISO()).fechas.length > 0)) await supabase.from('leads').update({ tipo_renta: 'mes' }).eq('id', leadId)
       if (preferencia) {
         const { data: lead } = await supabase.from('leads').select('notas').eq('id', leadId).maybeSingle()
         const nota = `Preferencia de loft: ${preferencia}`
@@ -1144,7 +1155,12 @@ export async function POST(request: Request) {
     // En los pasos de fecha, un mensaje que trae fecha/duración ("del 15 al
     // 19, ¿cuánto sale?") se procesa como fecha, no como pregunta frecuente.
     const datosFecha = extraerFechas(text, hoyISO())
-    const traeFecha = datosFecha.fechas.length > 0 || !!datosFecha.duracion || !!fechaExplicitaInvalida(text)
+    const faqEntrada = detectFaq(textLower)
+    const soloHorario = esPreguntaHorarioEntrada(text) && datosFecha.fechas.length <= 1 && !datosFecha.duracion
+    const duracionDocumental = faqEntrada === 'comprobante_ingresos' && !datosFecha.fechas.length
+    const traeFecha = !soloHorario && !duracionDocumental && (datosFecha.fechas.length > 0 || !!datosFecha.duracion || !!fechaExplicitaInvalida(text))
+    let procesoFechas = false
+    const puedeCotizarFechas = !cierreProtegido(contextoCierre) && (!fase || ['saludo', 'nombre', 'confirmar_precios', 'tipo_renta', 'personas', 'checkin', 'checkout', 'confirmar_interes', 'tipo_loft'].includes(fase))
 
     // Comando global: reiniciar en cualquier fase
     if (textLower === 'reiniciar') {
@@ -1182,6 +1198,13 @@ export async function POST(request: Request) {
       response = ''
       nextFase = fase
 
+    } else if (traeFecha && puedeCotizarFechas) {
+      procesoFechas = true
+      const esLlegada = /\b(llego|llegamos|llegada|desde|check\s*in)\b/i.test(text)
+      const r = await manejarFaseFecha(fase === 'checkout' && !esLlegada ? 'checkout' : 'checkin', { supabase, convId, leadId, from, text })
+      response = r.response
+      nextFase = r.nextFase
+
     } else if (fase === 'esperando_asesor') {
       if (!cierreProtegido(contextoCierre) && esRespuestaNegativa(textLower)) {
         if (leadId) await supabase.from('leads').update({ stage: 'no_interesado' }).eq('id', leadId)
@@ -1190,7 +1213,7 @@ export async function POST(request: Request) {
         cerrarConversacion = true
       } else if (!['0', 'off', 'false'].includes((process.env.BOT_FAQ_EN_ESPERA || '').trim().toLowerCase())) {
         const faq = detectFaq(textLower)
-        const permitidas = ['ubicacion', 'requisitos', 'fotos', 'fotos_no_abren', 'precios', 'visitas']
+        const permitidas = ['ubicacion', 'requisitos', 'fotos', 'fotos_no_abren', 'precios', 'visitas', 'persona_adicional', 'mascotas', 'impuestos', 'areas_comunes', 'ubicacion_unica', 'pedir_fechas', 'entrada_salida', 'contrato_mensual', 'comprobante_ingresos', 'deposito']
         const { data: agente, error } = await supabase.from('whatsapp_mensajes')
           .select('created_at').eq('conversacion_id', convId).eq('rol', 'agente')
           .order('created_at', { ascending: false }).limit(1).maybeSingle()
@@ -1201,7 +1224,7 @@ export async function POST(request: Request) {
         }
       }
 
-    } else if (detectFaq(textLower) && !traeFecha && !(fase === 'personas' && extraerPersonas(text, true))) {
+    } else if (detectFaq(textLower) && (!traeFecha || !puedeCotizarFechas) && !(fase === 'personas' && extraerPersonas(text, true) && !pareceInterrogacion(text))) {
       const faq = detectFaq(textLower)!
       let nombreCapturado: string | null = null
       if (faq === 'precios' && (!fase || ['saludo', 'nombre'].includes(fase))) {
@@ -1216,11 +1239,6 @@ export async function POST(request: Request) {
       nextFase = nombreCapturado ? 'confirmar_precios' : (fase || 'nombre')
       response = (nombreCapturado ? `Mucho gusto, *${nombreCapturado}*!\n\n` : '') +
         (faq === 'precios' ? await respuestaPrecio(supabase, leadId) : faqResponse(faq, tipo)) + flowReminder(nextFase)
-
-    } else if (traeFecha && (!fase || ['saludo', 'nombre', 'confirmar_precios', 'tipo_renta', 'personas', 'checkin', 'checkout'].includes(fase))) {
-      const r = await manejarFaseFecha(fase === 'checkout' ? 'checkout' : 'checkin', { supabase, convId, leadId, from, text })
-      response = r.response
-      nextFase = r.nextFase
 
     } else if (fase && ['checkin', 'checkout', 'confirmar_precios'].includes(fase) &&
       !traeFecha && (esRentaMensual(text) || preferencia || clasificarSinFecha(text) === 'sin_fecha_definida') &&
@@ -1433,7 +1451,7 @@ export async function POST(request: Request) {
       nextFase = 'tipo_renta'
     }
 
-    if (traeFecha && !fechaExplicitaInvalida(text) && ['checkout', 'personas'].includes(nextFase || '')) {
+    if (procesoFechas && !fechaExplicitaInvalida(text) && ['checkout', 'personas'].includes(nextFase || '')) {
       const personas = extraerPersonas(text)
       if (personas && leadId) await supabase.from('leads').update({ num_personas: personas }).eq('id', leadId)
       if (nextFase === 'personas') {
@@ -1445,6 +1463,15 @@ export async function POST(request: Request) {
           nextFase = r.nextFase
         }
       }
+    }
+
+    // La cotización ya incluye horario/impuestos: no duplicar el texto aprobado.
+    if (procesoFechas && faqEntrada && response) {
+      const { data: lead } = leadId
+        ? await supabase.from('leads').select('tipo_renta').eq('id', leadId).maybeSingle()
+        : { data: null }
+      const respuestaFaq = faqResponse(faqEntrada, lead?.tipo_renta)
+      if (!response.includes(respuestaFaq)) response += '\n\n' + respuestaFaq
     }
 
     // Evitar respuestas idénticas consecutivas, conservando los cambios de estado.

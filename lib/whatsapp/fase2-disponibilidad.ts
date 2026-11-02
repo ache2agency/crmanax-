@@ -1,9 +1,11 @@
-// Depósito por noche confirmado por Alexis el 30-oct-2026.
-export const DEPOSITO_NOCHE_TEXTO = 'Depósito en garantía para apartar: $649 MXN'
+import { TEXTOS, condicionesEstancia } from '../anaxagoras/textos.js'
+
+// Un solo depósito por reservación (Harold, 31-oct-2026).
+export const DEPOSITO_NOCHE_TEXTO = TEXTOS.deposito_noche
 export const DEPOSITO_MENSUAL_TEXTO = 'Más depósito en garantía de $5,000.00 pesos vía transferencia bancaria (se regresa de 5 a 3 días antes de finalizar el mes).'
 export function procesoDeposito(tipo: 'noche' | 'mes'): string {
   return tipo === 'mes' ? DEPOSITO_MENSUAL_TEXTO
-    : `Con fechas definidas → ${DEPOSITO_NOCHE_TEXTO} → INE por ambos lados → a tu llegada se paga la reserva; el depósito no se toma a cuenta.`
+    : `${TEXTOS.proceso_noche}\n\n${DEPOSITO_NOCHE_TEXTO}`
 }
 
 export type TipoRenta = 'noche' | 'mes'
@@ -170,6 +172,13 @@ export async function resolverDisponibilidadFase2({
     alerta: `Estancia de una noche en fin de semana — ${whatsapp}. Pedir nuevas fechas.`,
     tiposMismaFecha: '', sugerencia: null,
   }
+  // El cargo adicional informado no autoriza rebasar la capacidad del catálogo.
+  if (personas > 2) return {
+    ok: false,
+    response: `${TEXTOS.persona_adicional}\n\nUn asesor debe confirmar la capacidad y la opción adecuada para ${personas} personas antes de cotizar o apartar.`,
+    alerta: `Revisar capacidad para ${personas} personas — ${whatsapp}. No se emitió cotización automática.`,
+    tiposMismaFecha: '', sugerencia: null,
+  }
   const disponibilidad = await consultar({ checkin, checkout, personas })
   const loft = elegirLoftDisponible(disponibilidad.disponibles, personas)
 
@@ -181,7 +190,7 @@ export async function resolverDisponibilidadFase2({
       (disponibilidad.datosViejos ? `Tengo una opción estimada pendiente de confirmar.\n\n` : `¡Sí tenemos disponibilidad estimada! 🙌\n\n`) +
       `Para *${personas} persona${personas !== 1 ? 's' : ''}* del *${formatFecha(checkin)}* al *${formatFecha(checkout)}*, ${disponibilidad.datosViejos ? "podemos revisar un" : "aparece disponible un"} *${tipoTexto}*.\n\n` +
       `💰 *Total estimado:* ${total}\n\n` +
-      procesoDeposito(tipoRenta) + (disponibilidad.datosViejos ? `\n\nUn asesor te confirma disponibilidad antes de apartar.` : `\n\nUn asesor te confirma la disponibilidad y te ayuda a apartar. 🙌`)
+      procesoDeposito(tipoRenta) + '\n\n' + condicionesEstancia(tipoRenta) + (disponibilidad.datosViejos ? `\n\nUn asesor te confirma disponibilidad antes de apartar.` : `\n\nUn asesor te confirma la disponibilidad y te ayuda a apartar. 🙌`)
     const alerta =
       `🆕 *Lead con disponibilidad estimada*\n\n` +
       `👤 *Nombre:* ${nombre}\n` +

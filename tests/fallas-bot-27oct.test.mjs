@@ -73,11 +73,11 @@ test('2: año inválido pide confirmación sin guardar la salida como llegada', 
 
 test('3: preguntas reales contestadas antes de disponibilidad genérica o tarifas', async () => {
   for (const [telefono, texto, patron, tipo] of [
-    ['+525568714777', 'Y cuáles son los requisitos', /anaxagoras41suite@gmail.com[\s\S]*visto bueno[\s\S]*#blog/],
-    ['+525569365879', 'Cuál es el proceso para reservar estancias cortas', /fechas definidas[\s\S]*INE[\s\S]*no se toma a cuenta/],
+    ['+525568714777', 'Y cuáles son los requisitos', /anaxagoras41suite@gmail.com[\s\S]*comprobante de ingresos[\s\S]*\$5,000[\s\S]*#blog/],
+    ['+525569365879', 'Cuál es el proceso para reservar estancias cortas', /fechas exactas[\s\S]*INE[\s\S]*no se toma a cuenta/],
     ['+525546018614', 'Tienes fotos de los 3 tipos de lofts', /loftChico.php[\s\S]*loftMediano.php[\s\S]*loftGrande.php/],
-    ['+529611132362', 'Los costos ya incluyen impuestos?', /no incluyen impuestos[\s\S]*más IVA/],
-    [undefined, 'Cuánto es el depósito?', /asesor te confirma el monto[\s\S]*loft y las fechas/],
+    ['+529611132362', 'Los costos ya incluyen impuestos?', /no incluyen impuestos[\s\S]*más I\.V\.A\./],
+    [undefined, 'Cuánto es el depósito?', /\$649\.00 pesos por reservación[\s\S]*\$5,000\.00/],
     [undefined, 'Cuáles son los requisitos', /INE[\s\S]*no se toma a cuenta/, 'noche'],
   ]) {
     for (const fase of ['nombre', 'confirmar_precios', 'checkin', 'personas']) {

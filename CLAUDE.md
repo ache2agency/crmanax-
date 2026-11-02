@@ -116,7 +116,7 @@ Pídele al dueño del proyecto el archivo `.env.local` — sin él la app no con
 ## Bot — tarea 7 (30-oct-2026, pendiente de revisión en PR)
 
 - `BOT_FAQ_EN_ESPERA` está **encendido por defecto**, aprobado por Harold el 30-oct. Para apagarlo: `off`, `0` o `false`. Solo responde ubicación, requisitos, fotos, precios publicados y coordinación de visitas; conserva la fase y no consulta disponibilidad. No responde en modo humano ni si un asesor escribió en las últimas 12 h.
-- `DEPOSITO_NOCHE_TEXTO` en `lib/whatsapp/fase2-disponibilidad.ts`: $649 MXN, confirmado por Alexis el 30-oct. Mensual: $5,000 vía transferencia, devolución de 5 a 3 días antes de finalizar el mes.
+- `DEPOSITO_NOCHE_TEXTO` en `lib/whatsapp/fase2-disponibilidad.ts`: $649 por reservación (una vez por estancia), texto aprobado por Harold el 31-oct y compartido desde `lib/anaxagoras/textos.js`. Mensual: $5,000 vía transferencia, devolución de 5 a 3 días antes de finalizar el mes.
 - Nombres en varios mensajes: espera cinco segundos en fase `nombre`, agrupa fragmentos desde el historial persistido y solo el último responde. Esto agrega cinco segundos de espera a ese paso.
 - No hay URLs directas de imágenes de lofts en el código. Si un enlace no abre, ofrece apoyo de un asesor; envío de fotos pendiente de URLs autorizadas. No inventar detalles del baño ni horarios de visita.
 
@@ -127,3 +127,12 @@ Pídele al dueño del proyecto el archivo `.env.local` — sin él la app no con
 ## Conflictos y frescura — 8-bis
 
 Detector puro en `lib/reservas/conflictos.ts`, persistencia/dedupe transaccional en SQL v13 y orquestación en `lib/reservas/monitor.ts`. Panel con conflictos y último éxito por feed; bot evita afirmar disponibilidad con fuentes >2 h. Notifica por push, sin WhatsApp. Sync invoca el monitor al terminar; endpoint `/api/reservas/monitor` protegido por CRON_SECRET permite detectar que el sync dejó de correr (programador externo pendiente). SQL antes del código. Detalles: `docs/RESERVAS_CONFLICTOS.md`; migración/reversa solo en archivos, con validación local PGlite.
+
+## Respuestas rápidas — tarea 9
+
+Textos aprobados y catálogo del panel en `lib/anaxagoras/textos.js`; reconocimiento determinista de FAQ en `lib/anaxagoras/faq.js`. Panel y bot comparten las políticas nuevas, depósito de noche por reservación y requisitos mensuales. FAQ conservan fase/datos y respetan control humano/flag/12 h del asesor. Más de 2 huéspedes: informar cargo adicional y pedir confirmación de capacidad al asesor, sin cotizar automáticamente por encima del catálogo. Rebasado sobre main con #57 integrado (9-bis); conserva frescura y condiciones compartidas. Detalles: `docs/RESPUESTAS_RAPIDAS.md`.
+
+
+## Fechas y FAQ — tarea 9-bis
+
+En cotización las fechas válidas se procesan antes de las FAQ y se añade su respuesta aprobada sin duplicar horario/impuestos. Pregunta de entrada con hora explícita no cambia fechas; visitar familia/ciudad/trabajo no es visitar el loft. Nombre explícito y personas se capturan aunque haya FAQ. Espera del asesor, reservas aceptadas y control humano conservan su comportamiento. Validación: `tests/fechas-con-faq-9bis.test.mjs`; sin SQL ni deploy.
