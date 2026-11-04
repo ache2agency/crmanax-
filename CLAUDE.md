@@ -136,3 +136,7 @@ Textos aprobados y catálogo del panel en `lib/anaxagoras/textos.js`; reconocimi
 ## Fechas y FAQ — tarea 9-bis
 
 En cotización las fechas válidas se procesan antes de las FAQ y se añade su respuesta aprobada sin duplicar horario/impuestos. Pregunta de entrada con hora explícita no cambia fechas; visitar familia/ciudad/trabajo no es visitar el loft. Nombre explícito y personas se capturan aunque haya FAQ. Espera del asesor, reservas aceptadas y control humano conservan su comportamiento. Validación: `tests/fechas-con-faq-9bis.test.mjs`; sin SQL ni deploy.
+
+## Correcciones bot — 4-nov
+
+`limpiarNombre` elimina presentaciones y muletillas iniciales combinadas; `extraerNombre` capitaliza nombres y rechaza frases de urgencia/costos. «Menor a un mes», «menos de un mes» y «solo noches» indican renta por noche, sin calcular una salida mensual. En `esperando_asesor`, un rango completo y válido vuelve a consultar `loftsDisponibles`, cotiza y avisa al asesor; si faltan huéspedes pide ese dato. La frase genérica «ya tengo tus datos» no bloquea esta consulta, pero reservas/pagos, aceptación explícita de cotización y modo humano se conservan protegidos. Las FAQ en espera mantienen su regla de 12 horas sin mensaje de agente; el rango explícito de fechas tiene su propio procesamiento. Regresiones: `tests/bot-fixes-4nov.test.mjs`. Sin SQL ni deploy.
