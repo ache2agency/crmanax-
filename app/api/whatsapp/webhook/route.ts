@@ -33,6 +33,7 @@ import {
   motivoCierre,
   preferenciaLoft,
   esRentaMensual,
+  esRentaPorNoche,
   esRespuestaNegativa,
   descartadoPorSinRespuesta,
   stageAlRegresar,
@@ -728,14 +729,14 @@ async function manejarFaseFecha(
     checkinGuardado = (data?.fecha_checkin as string | null) || null
   }
   let duracionPendiente: Duracion | null = null
-  if (fase === 'checkin' && ultimoBot?.startsWith(PREFIJO_DURACION)) {
+  if (fase === 'checkin' && !esRentaPorNoche(text) && ultimoBot?.startsWith(PREFIJO_DURACION)) {
     duracionPendiente = extraerFechas(ultimoBot.slice(PREFIJO_DURACION.length).split('*')[0], hoy).duracion
   }
 
   const fechaInvalida = fechaExplicitaInvalida(text)
   if (fechaInvalida) return { response: `¿Me confirmas la fecha *${fechaInvalida}*? El año o la fecha no es válido.`, nextFase: fase }
   const fechasExtraidas = extraerFechas(text, hoy)
-  if (fase === 'checkin' && /\b(mensual|por mes|renta mensual|mes completo)\b/i.test(text) && fechasExtraidas.fechas.length === 1) {
+  if (fase === 'checkin' && esRentaMensual(text) && fechasExtraidas.fechas.length === 1) {
     const checkin = fechasExtraidas.fechas[0]
     const checkout = sumarMesesISO(checkin, 1)
     if (leadId) await supabase.from('leads').update({ fecha_checkin: checkin, fecha_checkout: checkout }).eq('id', leadId)
@@ -1139,6 +1140,7 @@ export async function POST(request: Request) {
       const personasCapturadas = extraerPersonas(text)
       if (personasCapturadas) await supabase.from('leads').update({ num_personas: personasCapturadas }).eq('id', leadId)
       if (esRentaMensual(text) && (!detectarFaqAprobada(textLower) || extraerFechas(text, hoyISO()).fechas.length > 0)) await supabase.from('leads').update({ tipo_renta: 'mes' }).eq('id', leadId)
+      if (esRentaPorNoche(text) && !cierreProtegido(contextoCierre)) await supabase.from('leads').update({ tipo_renta: 'noche' }).eq('id', leadId)
       if (preferencia) {
         const { data: lead } = await supabase.from('leads').select('notas').eq('id', leadId).maybeSingle()
         const nota = `Preferencia de loft: ${preferencia}`
@@ -1160,7 +1162,15 @@ export async function POST(request: Request) {
     const duracionDocumental = faqEntrada === 'comprobante_ingresos' && !datosFecha.fechas.length
     const traeFecha = !soloHorario && !duracionDocumental && (datosFecha.fechas.length > 0 || !!datosFecha.duracion || !!fechaExplicitaInvalida(text))
     let procesoFechas = false
-    const puedeCotizarFechas = !cierreProtegido(contextoCierre) && (!fase || ['saludo', 'nombre', 'confirmar_precios', 'tipo_renta', 'personas', 'checkin', 'checkout', 'confirmar_interes', 'tipo_loft'].includes(fase))
+    // Estar esperando asesor no equivale a tener una reserva o cotización
+    // aceptada. «Ya tengo tus datos» por sí solo tampoco impide cotizar un
+    // rango nuevo; pagos, reservas y aceptación explícita siguen protegidos.
+    const contextoFechas = fase === 'esperando_asesor'
+      ? { ...contextoCierre, ultimoMensajeBot: contextoCierre.ultimoMensajeBot?.replace(/ya tengo tus datos/gi, '') }
+      : contextoCierre
+    const fechasCompletasEnEspera = fase === 'esperando_asesor' && traeFecha &&
+      decidirFechas('checkin', text, hoyISO()).tipo === 'completo'
+    const puedeCotizarFechas = !cierreProtegido(contextoFechas) && (fechasCompletasEnEspera || !fase || ['saludo', 'nombre', 'confirmar_precios', 'tipo_renta', 'personas', 'checkin', 'checkout', 'confirmar_interes', 'tipo_loft'].includes(fase))
 
     // Comando global: reiniciar en cualquier fase
     if (textLower === 'reiniciar') {
@@ -1240,15 +1250,17 @@ export async function POST(request: Request) {
       response = (nombreCapturado ? `Mucho gusto, *${nombreCapturado}*!\n\n` : '') +
         (faq === 'precios' ? await respuestaPrecio(supabase, leadId) : faqResponse(faq, tipo)) + flowReminder(nextFase)
 
-    } else if (fase && ['checkin', 'checkout', 'confirmar_precios'].includes(fase) &&
-      !traeFecha && (esRentaMensual(text) || preferencia || clasificarSinFecha(text) === 'sin_fecha_definida') &&
+    } else if (fase && ['checkin', 'checkout', 'confirmar_precios', 'tipo_renta'].includes(fase) &&
+      !traeFecha && (esRentaMensual(text) || esRentaPorNoche(text) || preferencia || clasificarSinFecha(text) === 'sin_fecha_definida') &&
       !/precio|costo|cu[aá]nto/.test(textLower)) {
       if (clasificarSinFecha(text) === 'sin_fecha_definida') {
         response = MSG.sinFechaDefinida()
         nextFase = 'esperando_asesor'
         await alertarAdmin(`📅 *Lead sin fecha definida*\n📱 ${from}\n💬 ${text}`)
       } else {
-        response = '¿Desde qué fecha aproximada te gustaría rentar? Si aún no sabes, dime y un asesor te ayuda. 🙂'
+        response = esRentaPorNoche(text)
+          ? 'Renta *por noche* ✅\n\n' + MSG.pedirDatosDisponibilidad()
+          : '¿Desde qué fecha aproximada te gustaría rentar? Si aún no sabes, dime y un asesor te ayuda. 🙂'
         nextFase = 'checkin'
       }
 
@@ -1316,7 +1328,7 @@ export async function POST(request: Request) {
     // este cambio de flujo (2026-07-15). Conversaciones nuevas ya no pasan por aquí.
     } else if (fase === 'tipo_renta') {
       let tipo: string | null = null
-      if (textLower.includes('noche') || text === '1') tipo = 'noche'
+      if (esRentaPorNoche(text) || textLower.includes('noche') || text === '1') tipo = 'noche'
       else if (textLower.includes('mes') || text === '2') tipo = 'mes'
 
       if (!tipo) {

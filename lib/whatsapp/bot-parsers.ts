@@ -240,9 +240,13 @@ export function extraerFechas(
     duracion = { dias: 0, meses: 1, texto: '1 mes' }
   } else {
     const numeros = Object.keys(NUMEROS_ES).join('|')
-    const reDur = new RegExp(`\\b(\\d{1,2}|${numeros})\\s+(meses|mes|semanas|semana|noches|noche|dias|dia|anos|ano)\\b`)
-    const m = t.match(reDur)
-    if (m && !solapa(tokens, m.index ?? 0, (m.index ?? 0) + m[0].length)) {
+    // «Menor a un mes» indica renta por noche, no una duración de un mes.
+    // Conservar posiciones para no confundir números de las fechas; seguir
+    // buscando una duración concreta: «menos de un mes, 3 noches».
+    const textoDuracion = t.replace(/\b(?:menor(?:es)?\s+(?:a|de)|menos\s+de)\s+(?:un|1)\s+mes\b/g, m => ' '.repeat(m.length))
+    const reDur = new RegExp(`\\b(\\d{1,2}|${numeros})\\s+(meses|mes|semanas|semana|noches|noche|dias|dia|anos|ano)\\b`, 'g')
+    for (const m of textoDuracion.matchAll(reDur)) {
+      if (solapa(tokens, m.index ?? 0, (m.index ?? 0) + m[0].length)) continue
       const n = /^\d+$/.test(m[1]) ? Number(m[1]) : NUMEROS_ES[m[1]]
       const unidad = m[2]
       if (n > 0) {
@@ -250,6 +254,7 @@ export function extraerFechas(
         else if (unidad.startsWith('ano')) duracion = { dias: 0, meses: 12 * n, texto: `${n} ${n === 1 ? 'año' : 'años'}` }
         else if (unidad.startsWith('semana')) duracion = { dias: 7 * n, meses: 0, texto: `${n} ${n === 1 ? 'semana' : 'semanas'}` }
         else duracion = { dias: n, meses: 0, texto: `${n} ${n === 1 ? 'noche' : 'noches'}` }
+        break
       }
     }
   }
@@ -380,6 +385,7 @@ export function clasificarSinFecha(text: string): TipoSinFecha {
 // Palabras que delatan que el mensaje no es un nombre (pregunta, saludo,
 // intención de renta). "Manejas x mes" se guardó como nombre el 2-oct-2026.
 const PALABRAS_NO_NOMBRE = new Set([
+  'me', 'mi', 'urge', 'urgue', 'urgente', 'urgencia', 'claro', 'soy', 'okay', 'okey',
   'cual', 'cuales', 'requisito', 'requisitos', 'proceso', 'reservar', 'fotos', 'foto', 'deposito', 'impuestos',
   'disculpe', 'disculpa', 'perdon', 'perdone', 'una', 'uno', 'dos',
   'todas', 'todos', 'hola', 'gracias', 'buenas', 'buenos', 'tardes', 'noches', 'dias', 'dia',
@@ -397,8 +403,14 @@ const PALABRAS_NO_NOMBRE = new Set([
 // es Ana", "César, su servidor".
 export function limpiarNombre(text: string): string {
   let t = text.trim().replace(/[.!¡,;:]+$/g, '').trim()
-  t = t.replace(/^(hola[,!.\s]*)?(buen[oa]s?\s+(d[ií]as|tardes|noches)[,!.\s]*)?/i, '').trim()
-  t = t.replace(/^(soy|me llamo|mi nombre es|habla|le saluda|te saluda)\s+/i, '').trim()
+  // Quitar muletillas/presentaciones solo al inicio, incluso combinadas:
+  // «Hola, sí claro, mi nombre es carlos soles».
+  let anterior: string
+  do {
+    anterior = t
+    t = t.replace(/^(?:hola|buen[oa]s?\s+(?:d[ií]as|tardes|noches)|s[ií]|claro|ok(?:ay|ey)?|por supuesto)(?=[,!.:;\s]|$)[,!.:;\s]*/i, '').trim()
+    t = t.replace(/^(soy|me llamo|mi nombre es|habla|le saluda|te saluda)\s+/i, '').trim()
+  } while (t !== anterior)
   t = t.replace(/[,\s]+(su|tu)?\s*servidor(a)?$/i, '').trim()
   return t.replace(/[.!¡,;:]+$/g, '').trim()
 }
@@ -420,7 +432,14 @@ export function extraerNombre(text: string): string | null {
   // "Arturo Garcia  5551000099" (+525551000099, 29-oct): quitar el teléfono pegado al nombre.
   const sinTelefono = text.replace(/\+?\d[\d\s-]{6,}\d/g, ' ')
   const limpio = limpiarNombre(sinTelefono).split(/\s+(?=(?:costo|costos|precio|precios)\b)/i)[0].trim()
-  return esNombreValido(limpio) ? limpio : null
+  if (!esNombreValido(limpio)) return null
+  const uniforme = limpio === limpio.toLocaleLowerCase('es') || limpio === limpio.toLocaleUpperCase('es')
+  const particulas = new Set(['de', 'del', 'la', 'las', 'los', 'y', 'da', 'dos', 'van', 'von'])
+  return limpio.split(/\s+/).map((palabra, i) => {
+    if (i > 0 && particulas.has(palabra.toLocaleLowerCase('es'))) return palabra.toLocaleLowerCase('es')
+    const base = uniforme ? palabra.toLocaleLowerCase('es') : palabra
+    return base[0].toLocaleUpperCase('es') + base.slice(1)
+  }).join(' ')
 }
 
 // ─── Desinterés explícito ─────────────────────────────────────────────────────
@@ -617,7 +636,12 @@ export function preferenciaLoft(text: string): string | null {
 }
 
 export function esRentaMensual(text: string): boolean {
+  if (esRentaPorNoche(text)) return false
   return /\b(mensual(?:mente)?|por mes|renta mensual|mes completo)\b/.test(normalizar(text))
+}
+
+export function esRentaPorNoche(text: string): boolean {
+  return /\b(?:menor(?:es)?\s+(?:a|de)|menos\s+de)\s+(?:un|1)\s+mes\b|\b(?:solo(?:\s+por)?|por|x)\s+noches?\b/.test(normalizar(text))
 }
 
 
