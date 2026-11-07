@@ -4,5 +4,10 @@
       "path": "/api/whatsapp/reactivacion",
       "schedule": "0 14 * * *"
     }
-  ]
+  ],
+  "git": {
+    "deploymentEnabled": {
+      "codex/crmanax-iniciar-whatsapp": false
+    }
+  }
 }

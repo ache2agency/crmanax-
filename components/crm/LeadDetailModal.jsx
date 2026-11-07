@@ -17,6 +17,8 @@ export default function LeadDetailModal({
   updateLeadField,
   goToConversation,
   activeConversation,
+  iniciarWhatsApp,
+  iniciandoWhatsApp,
   getLeadNextStep,
   leadTimelineLoading,
   leadTimeline,
@@ -365,7 +367,14 @@ export default function LeadDetailModal({
               <div style={{ marginBottom: 20, background: "#0f172a", border: `1px solid ${modoHumano ? "#E8A83844" : "#25D36633"}`, borderRadius: 8, padding: 14 }}>
                 <div style={{ fontSize: 10, color: modoHumano ? "#E8A838" : "#25D366", letterSpacing: 1, marginBottom: 10 }}>ESTADO DEL BOT</div>
                 {!activeConversation ? (
-                  <div style={{ fontSize: 12, color: "#555" }}>Sin conversación de WhatsApp activa.</div>
+                  <div>
+                    <div style={{ fontSize: 12, color: "#aaa", marginBottom: 10 }}>Sin conversación de WhatsApp activa.</div>
+                    <button className="btn btn-wa" disabled={!lead.whatsapp || iniciandoWhatsApp}
+                      onClick={() => iniciarWhatsApp(lead)} style={{ fontSize: 12, padding: "7px 14px" }}>
+                      {iniciandoWhatsApp ? 'Iniciando…' : 'Iniciar WhatsApp'}
+                    </button>
+                    <div style={{ fontSize: 11, color: "#aaa", marginTop: 8 }}>Envía una plantilla de seguimiento. Espera su respuesta para escribir libremente.</div>
+                  </div>
                 ) : (
                   <>
                     <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>

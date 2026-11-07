@@ -9,6 +9,7 @@ import LeadsTable from "@/components/crm/LeadsTable";
 import LeadDetailModal from "@/components/crm/LeadDetailModal";
 import NewAppointmentModal from "@/components/crm/NewAppointmentModal";
 import NewLeadModal from "@/components/crm/NewLeadModal";
+import { conversacionDelLead } from "@/lib/whatsapp/iniciar";
 const supabase = createClient();
 
 const STAGES = [
@@ -147,6 +148,8 @@ export default function CRM() {
   const sendingAgentRef = useRef(false);
   const whatsConvsPollingRef = useRef(false);
   const [sendingReactivacion, setSendingReactivacion] = useState(false);
+  const iniciandoWhatsAppRef = useRef(false);
+  const [iniciandoWhatsApp, setIniciandoWhatsApp] = useState(false);
   const [sendingInfoLeadId, setSendingInfoLeadId] = useState(null);
   const [leadInfoDraft, setLeadInfoDraft] = useState("");
   const [labScenario, setLabScenario] = useState("ads");
@@ -1422,21 +1425,6 @@ export default function CRM() {
     setShowForm(false);
     setNewLead({ nombre: "", email: "", whatsapp: "", tipo_renta: "noche", fecha_checkin: "", fecha_checkout: "", num_personas: 1, loft_id: "", presupuesto: "", valor: "", notas: "", asignado_a: currentUser.id });
     showToast("Lead agregado ✓");
-    if (data[0].whatsapp) {
-      fetch("/api/whatsapp/bienvenida", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ lead_id: data[0].id }),
-      }).then(async (res) => {
-        if (res.ok) {
-          showToast("Mensaje de bienvenida enviado por WhatsApp ✓");
-          fetchWhatsConvs();
-        } else {
-          const err = await res.json().catch(() => ({}));
-          showToast((err.error || "Error") + (err.numero_intentado ? ` → ${err.numero_intentado}` : ""), "error");
-        }
-      }).catch((e) => showToast("WhatsApp fetch error: " + e.message, "error"));
-    }
   };
 
   const deleteLead = async (id) => {
@@ -1485,10 +1473,32 @@ export default function CRM() {
   const pipelineValue = leads.filter((l) => !["rentado", "no_interesado"].includes(normalizeStage(l.stage))).reduce((a, b) => a + b.valor, 0);
   const convRate = leads.length ? Math.round((leads.filter((l) => normalizeStage(l.stage) === "rentado").length / leads.length) * 100) : 0;
 
-  const hasConversation = (lead) => whatsConvs.some(c => c.lead_id === lead.id || c.whatsapp === lead.whatsapp);
+  const hasConversation = (lead) => !!conversacionDelLead(whatsConvs, lead);
+
+  const iniciarWhatsApp = async (lead) => {
+    if (iniciandoWhatsAppRef.current) return;
+    if (!window.confirm('Se enviará la plantilla de seguimiento a este prospecto. Menciona fechas compartidas previamente. Confirma que solicitó información y que el texto aplica.')) return;
+    iniciandoWhatsAppRef.current = true;
+    setIniciandoWhatsApp(true);
+    try {
+      const res = await fetch('/api/whatsapp/iniciar', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ lead_id: lead.id }),
+      });
+      const data = await res.json();
+      await fetchWhatsConvs();
+      if (!res.ok) throw new Error(data.error || 'No se pudo iniciar WhatsApp');
+      showToast(data.existente ? 'La conversación ya existe. Usa Ver conversación.' : 'Plantilla aceptada por WhatsApp. Espera la respuesta del prospecto.');
+    } catch (e) {
+      showToast(e?.message || 'No se confirmó el envío. Revisa la conversación antes de reintentar.', 'error');
+    } finally {
+      iniciandoWhatsAppRef.current = false;
+      setIniciandoWhatsApp(false);
+    }
+  };
 
   const goToConversation = (lead) => {
-    const conv = whatsConvs.find(c => c.lead_id === lead.id || c.whatsapp === lead.whatsapp);
+    const conv = conversacionDelLead(whatsConvs, lead);
     fetchWhatsConvs().then(() => {
       setView("convs");
       if (conv) {
@@ -2564,7 +2574,9 @@ export default function CRM() {
             sendingInfoLeadId={sendingInfoLeadId}
             leadInfoDraft={leadInfoDraft}
             setLeadInfoDraft={setLeadInfoDraft}
-            activeConversation={whatsConvs.find((conv) => conv.lead_id === lead.id || conv.whatsapp === lead.whatsapp) || null}
+            iniciarWhatsApp={iniciarWhatsApp}
+            iniciandoWhatsApp={iniciandoWhatsApp}
+            activeConversation={conversacionDelLead(whatsConvs, lead)}
             getLeadNextStep={getLeadNextStep}
             leadTimelineLoading={leadTimelineLoading}
             leadTimeline={leadTimeline}
