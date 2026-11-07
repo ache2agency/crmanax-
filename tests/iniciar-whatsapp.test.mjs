@@ -80,7 +80,7 @@ test('reserva antes de Meta, usa plantilla exacta y confirma historial con wamid
   assert.equal(e.sent[0].to,'+525512345678'); assert.equal(e.sent[0].templateName,'primer_contacto_anax')
   assert.deepEqual(Array.from(e.sent[0].parameters),['Ana'])
   assert.equal(e.calls[1].name,'confirmar_inicio_whatsapp'); assert.equal(e.calls[1].args.p_meta_id,'wamid.falso')
-  assert.equal(e.calls[1].args.p_contenido,iniciar.textoPlantillaInicio('Ana'))
+  assert.equal(e.calls[1].args.p_contenido,'Hola Ana 👋, te escribimos de Anaxágoras 41. Recibimos tu solicitud de información sobre hospedaje. ¿Te gustaría que te compartamos disponibilidad y precios por este medio? 🏡')
 })
 test('solicitudes concurrentes y repetición no envían dos veces (RPC mock atómico)', async () => {
   const e=endpoint(); const rs=await Promise.all([e.post(),e.post(),e.post()]); assert.deepEqual(rs.map(r=>r.status).sort(),[200,409,409]); assert.equal(e.sent.length,1)

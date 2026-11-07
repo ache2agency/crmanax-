@@ -12,22 +12,22 @@ Solo cuando Meta rechaza explícitamente la principal con **132001** (plantilla 
 
 Ambas usan `es_MX` y un parámetro de cuerpo (`nombre`). El historial confirmado guarda el **nombre efectivo de la plantilla** y el identificador Meta. Una plantilla personalizada debe conservar el cuerpo y los botones de la principal; no se consulta su cuerpo automáticamente.
 
-Definición propuesta para **`primer_contacto_anax`**, pendiente de aprobación/publicación por Harold, **no creada en Meta en esta tarea**:
+Definición **aprobada en Meta**, confirmada por Harold el 7-nov-2026, para **`primer_contacto_anax`**:
 
-> Hola {{1}}, recibimos tus datos porque solicitaste información sobre hospedaje en Anaxágoras 41. ¿Buscas una estancia por noche o por mes? Responde a este mensaje y un asesor te ayudará con los detalles.
+> Hola {{1}} 👋, te escribimos de Anaxágoras 41. Recibimos tu solicitud de información sobre hospedaje. ¿Te gustaría que te compartamos disponibilidad y precios por este medio? 🏡
 
 Dos botones **QUICK_REPLY**, en este orden:
 
 1. **Sí, me interesa**
 2. **Ahora no**
 
-Son botones estáticos de la plantilla, no botones nuevos enviados como mensaje separado. Deben existir en su definición aprobada en Meta. El remitente usa `sendMetaWhatsAppTemplate`; no crea ni modifica plantillas.
+Son botones estáticos de la plantilla, no botones nuevos enviados como mensaje separado. Harold confirmó estos títulos en la definición aprobada en Meta. El remitente usa `sendMetaWhatsAppTemplate`; no crea ni modifica plantillas.
 
 Texto documentado del respaldo:
 
 > Hola {{1}}, seguimos con tu solicitud de información sobre disponibilidad en Anaxágoras 41 para las fechas que nos compartiste. ¿Sigue vigente tu interés para que un asesor te confirme los detalles?
 
-Este respaldo presupone fechas compartidas; la confirmación del CRM lo advierte. No se consultó Meta para verificar la vigencia de ninguna plantilla. Sus botones históricos **Sí, envíame la info** y **Ya no, gracias** también se interpretan como consentimiento/negativa cuando corresponden a este primer contacto. Las reactivaciones ajenas conservan su manejo anterior.
+Este respaldo presupone fechas compartidas; la confirmación del CRM lo advierte. La aprobación de la principal procede de la confirmación de Harold; esta tarea no consultó ni modificó plantillas en Meta. No se verificó la vigencia del respaldo. Sus botones históricos **Sí, envíame la info** y **Ya no, gracias** también se interpretan como consentimiento/negativa cuando corresponden a este primer contacto. Las reactivaciones ajenas conservan su manejo anterior.
 
 ## Respuesta y control humano
 
