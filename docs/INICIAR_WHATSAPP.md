@@ -1,8 +1,13 @@
 # Iniciar WhatsApp — Tarea 27
 
-En la ficha del prospecto sin chat aparece **Iniciar WhatsApp**. El alta manual no manda mensajes automáticamente. Con conversación existente, por lead o teléfono equivalente, aparece **Ver conversación**. Un WhatsApp vacío o un envío en curso deshabilitan el botón; el servidor vuelve a validar el número.
+Al registrar un prospecto manual sin chat aparece **Sin iniciar** en su tarjeta de Kanban y en Conversaciones, con **Iniciar WhatsApp** ahí mismo (fila y detalle), además de la ficha. **El alta manual nunca envía mensajes**: solo el clic explícito y su confirmación llaman al endpoint. Con conversación existente, por lead o teléfono equivalente, aparece **Ver conversación**. Un WhatsApp vacío o un envío en curso deshabilitan el botón; el servidor vuelve a validar el número.
 
 `POST /api/whatsapp/iniciar` recibe exclusivamente `{ "lead_id": "uuid" }`. Exige sesión Supabase, consulta el lead con RLS y confirma asignación/admin dentro de la reserva transaccional. No acepta teléfono, usuario o texto arbitrarios. `/api/whatsapp/bienvenida` es un alias protegido para clientes anteriores. No se modifica `/reactivar-manual` ni el pipeline.
+
+
+Los pendientes de Conversaciones se derivan de los leads visibles sin chat real; también cubren altas anteriores sin conversación. No se insertan filas en `whatsapp_conversaciones` ni mensajes al registrar, recargar o seleccionar un pendiente, por lo que los seguimientos no reciben un chat nuevo. Los IDs `sin-iniciar:<lead_id>` son exclusivamente visuales. La lista espera una carga exitosa de conversaciones antes de clasificarlos, respeta búsqueda, fase **Sin iniciar** y asignación; no los clasifica como BOT/Humano. Sin teléfono, muestra el pendiente con botón deshabilitado y acceso a la ficha.
+
+Antes del inicio, el detalle no tiene compositor, respuestas rápidas, Reactivar, Tomar/BOT ni marcado leído. No consulta/pollear mensajes con un ID visual. La tarjeta conserva la etapa comercial actual: **Sin iniciar** es una etiqueta de WhatsApp, no una columna nueva del pipeline. El mismo handler protegido atiende los botones de ficha/Kanban/Conversaciones, bloquea clics mientras envía y conserva el bloqueo persistente del servidor. Al aparecer un chat real por lead o teléfono equivalente, el pendiente se sustituye; si estaba seleccionado, abre ese chat. Un intento fallido que ya creó chat permanece como conversación para revisar y no ofrece un reenvío automático.
 
 ## Plantilla configurable y respaldo
 

@@ -140,3 +140,8 @@ En cotización las fechas válidas se procesan antes de las FAQ y se añade su r
 ## Correcciones bot — 4-nov
 
 `limpiarNombre` elimina presentaciones y muletillas iniciales combinadas; `extraerNombre` capitaliza nombres y rechaza frases de urgencia/costos. «Menor a un mes», «menos de un mes» y «solo noches» indican renta por noche, sin calcular una salida mensual. En `esperando_asesor`, un rango completo y válido vuelve a consultar `loftsDisponibles`, cotiza y avisa al asesor; si faltan huéspedes pide ese dato. La frase genérica «ya tengo tus datos» no bloquea esta consulta, pero reservas/pagos, aceptación explícita de cotización y modo humano se conservan protegidos. Las FAQ en espera mantienen su regla de 12 horas sin mensaje de agente; el rango explícito de fechas tiene su propio procesamiento. Regresiones: `tests/bot-fixes-4nov.test.mjs`. Sin SQL ni deploy.
+
+
+## Iniciar WhatsApp — Tarea 27, ajuste 7-nov (PR #61)
+
+Alta manual sin envíos: pendientes visuales `Sin iniciar` en Kanban y Conversaciones con botón explícito `Iniciar WhatsApp`. `conversacionesConPendientes` deriva la lista de leads sin chat, sin insertar conversaciones/mensajes; no hay seguimiento automático de estos pendientes. IDs visuales no pasan a consultas de mensajes ni controles de chat. Principal `primer_contacto_anax` ya aprobada según Harold; texto literal en `docs/INICIAR_WHATSAPP.md`. SQL v14 solo en archivo, antes del código con autorización. Pruebas de alta real/render/clic/filtros en `tests/sin-iniciar.test.mjs`.
