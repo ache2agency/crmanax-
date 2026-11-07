@@ -11,7 +11,7 @@ const migration = readFileSync(new URL('../supabase/migration_v14_iniciar_whatsa
 try {
   await db.exec(`create role anon; create role authenticated; create role service_role;
     create table public.profiles(id uuid primary key, rol text);
-    create table public.leads(id uuid primary key default gen_random_uuid(), whatsapp text, asignado_a uuid);
+    create table public.leads(id uuid primary key default gen_random_uuid(), whatsapp text, asignado_a uuid, nombre text default 'Ana', stage text default 'nuevo_contacto');
     create table public.whatsapp_conversaciones(id uuid primary key default gen_random_uuid(), whatsapp text not null,
       lead_id uuid references leads(id), estado text default 'abierta', fase text default 'saludo',
       modo_humano boolean default false, humano_intervino boolean default false, tomado_por uuid,
@@ -56,7 +56,7 @@ try {
   assert.equal((await claim(id2,'+525599999999',other)).status,'existing')
   for(const role of ['anon','authenticated']) {
     const perms=await scalar(`select has_function_privilege($1,'reservar_inicio_whatsapp(uuid,text,uuid)','execute') reserve,
-      has_function_privilege($1,'confirmar_inicio_whatsapp(uuid,text,text)','execute') finish`,[role])
+      has_function_privilege($1,'confirmar_inicio_whatsapp(uuid,text,text,text)','execute') finish`,[role])
     assert.equal(perms.reserve,false); assert.equal(perms.finish,false)
   }
   assert.equal((await scalar("select has_function_privilege('service_role','reservar_inicio_whatsapp(uuid,text,uuid)','execute') ok")).ok,true)
@@ -66,5 +66,50 @@ try {
   assert.equal(reused.status,'claimed'); assert.equal(reused.conversacion_id,emptyConv.id)
   assert.equal((await claim(emptyId,'+525588888888')).status,'cooldown')
   assert.equal((await scalar('select count(*)::int n from whatsapp_mensajes')).n,3)
-  console.log('SQL v14 OK: reserva persistente, repetición, 24 h, duplicados, permisos, takeover y confirmación atómica; base local en memoria.')
+  const answer = async (phone,decision,context='wamid.falso',input='entrada') =>
+    (await scalar('select resolver_respuesta_inicio_whatsapp($1,$2,$3,$4,$5) result',[phone,decision,context,input,decision==='si'?'Sí, me interesa':'Ahora no'])).result
+  // El contexto de otra plantilla jamás habilita el bot.
+  assert.equal((await answer(phone,'si','wamid.otro')).status,'ignored')
+  assert.equal((await answer(phone,'si')).status,'processed')
+  const active=await scalar('select * from whatsapp_conversaciones where id=$1',[first.conversacion_id])
+  assert.equal(active.modo_humano,false); assert.equal(active.tomado_por,null)
+  assert.equal(active.fase,'confirmar_precios'); assert.equal(active.humano_intervino,true)
+  assert.equal((await answer(phone,'si')).status,'duplicate')
+  const createInitiation = async (phone,extra={}) => {
+    const id=await lead(phone)
+    const c=await claim(id,phone)
+    await db.query('select confirmar_inicio_whatsapp($1,$2,$3,$4)',[c.mensaje_id,'Texto de contacto','wamid.falso','primer_contacto_anax'])
+    return {id,...c}
+  }
+  const negative=await createInitiation('+525577777777')
+  assert.equal((await answer('+525577777777','no')).status,'processed')
+  assert.equal((await scalar('select stage from leads where id=$1',[negative.id])).stage,'no_interesado')
+  const closed=await scalar('select * from whatsapp_conversaciones where id=$1',[negative.conversacion_id])
+  assert.equal(closed.estado,'cerrada'); assert.equal(closed.fase,'no_interesado'); assert.equal(closed.humano_intervino,true)
+  assert.equal((await answer('+525577777777','no')).status,'duplicate')
+  const protectedLead=await createInitiation('+525566666666')
+  await db.query("insert into whatsapp_mensajes(conversacion_id,rol,contenido) values ($1,'agente','Asesor posterior')",[protectedLead.conversacion_id])
+  assert.equal((await answer('+525566666666','si')).status,'protected')
+  assert.equal((await scalar('select modo_humano from whatsapp_conversaciones where id=$1',[protectedLead.conversacion_id])).modo_humano,true)
+  for(const stage of ['deposito_pendiente','reservado','hospedado','completado']) {
+    await db.query('update leads set stage=$1 where id=$2',[stage,protectedLead.id])
+    assert.equal((await answer('+525566666666','no')).status,'protected')
+    assert.equal((await scalar('select stage from leads where id=$1',[protectedLead.id])).stage,stage)
+  }
+  const noName=await createInitiation('+525555555555')
+  await db.query("update leads set nombre='' where id=$1",[noName.id])
+  assert.equal((await answer('+525555555555','si')).status,'processed')
+  assert.equal((await scalar('select fase from whatsapp_conversaciones where id=$1',[noName.conversacion_id])).fase,'nombre')
+  const late=await createInitiation('+525544444444')
+  await db.query("update whatsapp_inicios set solicitado_at=now()-interval '25 hours' where telefono='+525544444444'")
+  assert.equal((await answer('+525544444444','si',null)).status,'ignored')
+  assert.equal((await answer('+525544444444','si','wamid.falso')).status,'processed')
+  await db.query('select confirmar_inicio_whatsapp($1,$2,$3,$4)',[late.mensaje_id,'Texto exacto','wamid.falso','custom_v2'])
+  const finalized=await scalar('select raw_payload from whatsapp_mensajes where id=$1',[late.mensaje_id])
+  assert.equal(finalized.raw_payload.template,'custom_v2'); assert.equal(finalized.raw_payload.respuesta,'si')
+  for(const role of ['anon','authenticated']) {
+    assert.equal((await scalar("select has_function_privilege($1,'resolver_respuesta_inicio_whatsapp(text,text,text,text,text)','execute') ok",[role])).ok,false)
+  }
+  assert.equal((await scalar("select count(*)::int n from whatsapp_mensajes where rol='usuario' and raw_payload->>'source'='respuesta_inicio_whatsapp'")).n,4)
+  console.log('SQL v14 OK: reserva/24 h, plantilla efectiva, consentimiento Sí/Ahora no, contexto, duplicados, protección del asesor/reservas y permisos; base local en memoria.')
 } finally { await db.close() }

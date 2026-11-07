@@ -1,3 +1,4 @@
+import { respuestaPrimerContacto } from '@/lib/whatsapp/iniciar'
 import { TEXTOS, textoAprobado, condicionesEstancia } from '@/lib/anaxagoras/textos'
 import { detectarFaqAprobada, esPreguntaHorarioEntrada } from '@/lib/anaxagoras/faq'
 import { createServiceRoleClient } from '@/utils/supabase/server'
@@ -208,6 +209,47 @@ async function manejarBotonReactivacion(
   return true
 }
 
+// Antes del takeover humano: el consentimiento explícito a este primer contacto
+// habilita el bot. El RPC acredita el mensaje, evita duplicados y protege avances.
+async function manejarRespuestaPrimerContacto(
+  supabase: ReturnType<typeof createServiceRoleClient>, payload: unknown
+): Promise<boolean> {
+  const message = extraerMensajeCrudo(payload)
+  const respuesta = respuestaPrimerContacto(message)
+  const from = extraerFromCrudo(payload)
+  if (!respuesta || !from || ADMIN_WHATSAPP_NUMBERS_NORMALIZED.has(from)) return false
+  const context = message?.context as Record<string, unknown> | undefined
+  const { data, error } = await supabase.rpc('resolver_respuesta_inicio_whatsapp', {
+    p_telefono: from, p_decision: respuesta.decision,
+    p_contexto: typeof context?.id === 'string' ? context.id : null,
+    p_entrada_id: typeof message?.id === 'string' ? message.id : null,
+    p_texto: respuesta.texto,
+  })
+  if (error) throw new Error('No se pudo resolver la respuesta al primer contacto')
+  if (!data || data.status === 'ignored') return false
+  if (data.status === 'protected') {
+    const { error: logError } = await supabase.from('whatsapp_mensajes').insert([{
+      conversacion_id: data.conversacion_id, rol: 'usuario', contenido: respuesta.texto,
+      raw_payload: payload as Record<string, unknown>,
+    }])
+    if (logError) throw new Error('No se pudo guardar la respuesta del prospecto')
+    await supabase.from('whatsapp_conversaciones').update({ ultimo_mensaje_at: new Date().toISOString() }).eq('id', data.conversacion_id)
+    await enviarPushATodos({ title: '💬 Respuesta al primer contacto', body: `${from}: ${respuesta.texto}` })
+    return true
+  }
+  if (data.status === 'duplicate') return true
+  if (data.status !== 'processed') throw new Error('Respuesta de primer contacto inválida')
+  if (respuesta.decision === 'si') {
+    const contenido = data.nombre?.trim() ? MSG.saludo(data.nombre.trim()) : MSG.bienvenida()
+    await sendMetaWhatsAppMessage({ to: from, body: contenido })
+    const { error: messageError } = await supabase.from('whatsapp_mensajes').insert([{
+      conversacion_id: data.conversacion_id, rol: 'bot', contenido,
+    }])
+    if (messageError) throw new Error('No se pudo guardar la respuesta del bot')
+  }
+  return true
+}
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type IncomingWhatsAppMessage = {
@@ -288,7 +330,7 @@ function formatRangoPrecio(rango: { min: number; max: number }): string {
 
 // Respuestas sí/no a "¿te interesa este rango de precio?" (fase 'confirmar_interes').
 function esRespuestaAfirmativa(textLower: string): boolean {
-  const t = textLower.trim()
+  const t = textLower.trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
   return /^(s[ií]\b|claro|va\b|dale|adelante|de acuerdo|correcto|me interesa|s[ií] me interesa|quiero|por supuesto|ok(?:ay)?\b)/.test(t)
 }
 
@@ -856,6 +898,10 @@ export async function POST(request: Request) {
     // el toque del botón del template de nudge no es tipo "text" y de otro
     // modo se perdería.
     await registrarAperturaVentanaAdmin(supabase, payload)
+
+    if (await manejarRespuestaPrimerContacto(supabase, payload)) {
+      return Response.json({ ok: true, respuesta_primer_contacto: true })
+    }
 
     const botonManejado = await manejarBotonReactivacion(supabase, payload)
     if (botonManejado) return Response.json({ ok: true, boton_reactivacion: true })

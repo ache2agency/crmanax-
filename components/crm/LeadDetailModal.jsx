@@ -373,7 +373,7 @@ export default function LeadDetailModal({
                       onClick={() => iniciarWhatsApp(lead)} style={{ fontSize: 12, padding: "7px 14px" }}>
                       {iniciandoWhatsApp ? 'Iniciando…' : 'Iniciar WhatsApp'}
                     </button>
-                    <div style={{ fontSize: 11, color: "#aaa", marginTop: 8 }}>Envía una plantilla de seguimiento. Espera su respuesta para escribir libremente.</div>
+                    <div style={{ fontSize: 11, color: "#aaa", marginTop: 8 }}>Envía una plantilla de primer contacto. «Sí, me interesa» activa el bot; «Ahora no» cierra el seguimiento.</div>
                   </div>
                 ) : (
                   <>

@@ -4,6 +4,7 @@ import { readFileSync, readdirSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { runInNewContext } from 'node:vm'
 import ts from 'typescript'
+import * as iniciar from '../lib/whatsapp/iniciar.js'
 import * as textos from '../lib/anaxagoras/textos.js'
 import * as faq from '../lib/anaxagoras/faq.js'
 import * as parsers from '../lib/whatsapp/bot-parsers.ts'
@@ -35,7 +36,7 @@ export function escenario(fase = 'checkin', whatsapp = '+523112694172', opciones
     whatsapp_mensajes: [], lead_activities: [],
   }
   const enviados = []
-  const supabase = { from(table) {
+  const supabase = { async rpc(name,args) { return opciones.rpc ? opciones.rpc(name,args,db) : {data:{status:'ignored'},error:null} }, from(table) {
     const filters = []
     let op = 'select', values, limit, selectError
     const orders = []
@@ -79,6 +80,7 @@ export function escenario(fase = 'checkin', whatsapp = '+523112694172', opciones
   runInNewContext(source + '\nexports.catalogoPrueba = MSG.precios() + flowReminder("confirmar_precios");', {
     exports, process: { env: { ...process.env, BOT_FAQ_EN_ESPERA: opciones.faqEspera } }, Response, setTimeout: opciones.setTimeout || ((fn) => { fn() }), Date: opciones.hoy ? class extends Date { constructor(...args) { super(...(args.length ? args : [opciones.hoy + 'T12:00:00Z'])) } } : Date, console: { log() {}, error: console.error },
     require(name) {
+      if (name === '@/lib/whatsapp/iniciar') return iniciar
       if (name === '@/lib/anaxagoras/textos') return textos
       if (name === '@/lib/anaxagoras/faq') return faq
       if (name.endsWith('/bot-parsers')) return opciones.hoy ? { ...parsers, hoyISO: () => opciones.hoy } : parsers
@@ -95,10 +97,10 @@ export function escenario(fase = 'checkin', whatsapp = '+523112694172', opciones
   })
   return {
     db, supabase, enviados, catalogo: exports.catalogoPrueba, respuestas: () => enviados.filter(msg => msg.to === whatsapp),
-    async enviar(text) {
+    async enviar(text, message = {}) {
       const response = await exports.POST(new Request('http://localhost/api/whatsapp/webhook', {
         method: 'POST', body: JSON.stringify({ object: 'whatsapp_business_account', entry: [{ changes: [{ value: {
-          messages: [{ from: whatsapp, type: 'text', text: { body: text } }],
+          messages: [{ from: whatsapp, type: 'text', text: { body: text }, ...message }],
         } }] }] }),
       }))
       assert.equal(response.status, 200)

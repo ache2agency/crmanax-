@@ -1,6 +1,6 @@
 import { createClient, createServiceRoleClient } from '@/utils/supabase/server'
-import { getWhatsAppProvider, sendMetaWhatsAppTemplate } from '@/lib/whatsapp/provider'
-import { normalizarTelefonoInicio, textoPlantillaInicio } from '@/lib/whatsapp/iniciar'
+import { getWhatsAppProvider, sendMetaWhatsAppTemplate, MetaTemplateError } from '@/lib/whatsapp/provider'
+import { normalizarTelefonoInicio, textoPlantillaInicio, PLANTILLA_RESPALDO } from '@/lib/whatsapp/iniciar'
 
 export const dynamic = 'force-dynamic'
 
@@ -28,7 +28,7 @@ export async function POST(request: Request) {
     }
     const db = createServiceRoleClient()
     const nombre = lead.nombre?.trim() || 'ahí'
-    const contenido = textoPlantillaInicio(nombre)
+    let plantilla = process.env.META_TEMPLATE_PRIMER_CONTACTO?.trim() || 'primer_contacto_anax'
     // Reserva persistente ANTES de llamar a Meta. Nunca enviar si falla el RPC.
     const { data: claim, error: claimError } = await db.rpc('reservar_inicio_whatsapp', {
       p_lead_id: lead.id, p_telefono: telefono, p_usuario: user.id,
@@ -43,17 +43,26 @@ export async function POST(request: Request) {
     if (claim.status !== 'claimed') return Response.json({ error: 'No se pudo reservar el contacto' }, { status: 503 })
     let sent
     try {
-      sent = await sendMetaWhatsAppTemplate({ to: telefono, templateName: 'seguimiento_solicitud_anax', parameters: [nombre] })
+      try {
+        sent = await sendMetaWhatsAppTemplate({ to: telefono, templateName: plantilla, parameters: [nombre] })
+      } catch (error) {
+        // 132001: plantilla inexistente/no disponible en el idioma solicitado.
+        // Solo este rechazo explícito permite respaldo; nunca un timeout/5xx.
+        if (!(error instanceof MetaTemplateError) || error.code !== 132001 || error.status !== 400 || plantilla === PLANTILLA_RESPALDO) throw error
+        plantilla = PLANTILLA_RESPALDO
+        sent = await sendMetaWhatsAppTemplate({ to: telefono, templateName: plantilla, parameters: [nombre] })
+      }
       if (!sent.id) throw new Error('Meta no devolvió identificador')
     } catch {
       // Un timeout puede ocurrir DESPUÉS de que Meta acepte. No liberar ni reintentar.
       return Response.json({ error: 'No se confirmó el envío. Revisa el historial y Meta antes de reintentar; el intento queda protegido durante 24 h.', conversacion_id: claim.conversacion_id }, { status: 502 })
     }
+    const contenido = textoPlantillaInicio(nombre, plantilla)
     const { error: finishError } = await db.rpc('confirmar_inicio_whatsapp', {
-      p_mensaje_id: claim.mensaje_id, p_contenido: contenido, p_meta_id: sent.id,
+      p_mensaje_id: claim.mensaje_id, p_contenido: contenido, p_meta_id: sent.id, p_template: plantilla,
     })
     if (finishError) return Response.json({ error: 'Meta aceptó la plantilla, pero falta confirmar el historial. No reenvíes; requiere revisión.', conversacion_id: claim.conversacion_id }, { status: 503 })
-    return Response.json({ ok: true, conversacion_id: claim.conversacion_id, contenido })
+    return Response.json({ ok: true, conversacion_id: claim.conversacion_id, contenido, plantilla })
   } catch {
     return Response.json({ error: 'No se pudo iniciar WhatsApp' }, { status: 503 })
   }
