@@ -136,6 +136,8 @@ export default function ConversationsPanel({
   STAGES,
   normalizeStage,
   ultimoUsuarioAtPorConv,
+  iniciarWhatsApp,
+  iniciandoWhatsApp = false,
 }) {
   const [mobileView, setMobileView] = useState("list");
   const [showInfoCards, setShowInfoCards] = useState(false);
@@ -159,7 +161,7 @@ export default function ConversationsPanel({
   // ese valor se reporta mal como "no visible" aunque la app esté en primer
   // plano, así que el check bloquearía el refresh por completo.
   useEffect(() => {
-    if (!selectedConv?.id) return;
+    if (!selectedConv?.id || selectedConv.sin_iniciar) return;
     const convId = selectedConv.id;
     const interval = setInterval(() => {
       fetchConvMessagesRef.current(convId, { silent: true });
@@ -168,6 +170,15 @@ export default function ConversationsPanel({
   }, [selectedConv?.id]);
 
   const handleSelectConv = async (c) => {
+    if (c.sin_iniciar) {
+      await confirmReturnToBotIfNeeded(() => {
+        setSelectedConv(c);
+        setShowInfoCards(false);
+        setShowRR(false);
+        setMobileView('chat');
+      });
+      return;
+    }
     if (c.id === selectedConv?.id) {
       // El botón de regresar (mobile) solo cambia mobileView a "list" sin
       // limpiar selectedConv — sin este caso, tocar de nuevo la misma
@@ -199,8 +210,8 @@ export default function ConversationsPanel({
     return lead?.nombre || c.whatsapp;
   };
 
-  const getModeColor = (c) => c.modo_humano ? "#A8263C" : WA_TEAL;
-  const getModeIcon = (c) => c.modo_humano ? "👤" : "🤖";
+  const getModeColor = (c) => c.sin_iniciar ? '#92400e' : c.modo_humano ? "#A8263C" : WA_TEAL;
+  const getModeIcon = (c) => c.sin_iniciar ? '○' : c.modo_humano ? "👤" : "🤖";
 
   return (
     <>
@@ -407,6 +418,14 @@ export default function ConversationsPanel({
                       {owner && (
                         <div style={{ fontSize: 10, color: "#8696a0", marginTop: 1 }}>{owner.nombre || owner.email}</div>
                       )}
+                      {c.sin_iniciar && (
+                        <button
+                          className="wa-ctrl-btn"
+                          style={{ marginTop: 6, background: '#e8f5e9', color: WA_GREEN }}
+                          disabled={iniciandoWhatsApp || !c.whatsapp?.trim()}
+                          onClick={(e) => { e.stopPropagation(); iniciarWhatsApp(leadsById ? leadsById.get(c.lead_id) : leads.find(l => l.id === c.lead_id)); }}
+                        >{iniciandoWhatsApp ? 'Iniciando…' : 'Iniciar WhatsApp'}</button>
+                      )}
                     </div>
                   </div>
                 );
@@ -422,6 +441,28 @@ export default function ConversationsPanel({
               <div className="wa-placeholder-icon">💬</div>
               <div style={{ fontSize: 14 }}>Selecciona una conversación</div>
             </div>
+          ) : selectedConv.sin_iniciar ? (
+            <>
+              <div className="wa-chat-header">
+                <button className="wa-back-btn" onClick={() => setMobileView('list')}>←</button>
+                <div className="wa-chat-header-info">
+                  <div className="wa-chat-name">{selectedConvLead?.nombre || selectedConv.whatsapp}</div>
+                  <div className="wa-chat-sub">Sin iniciar · {selectedConv.whatsapp || 'Sin WhatsApp'}</div>
+                </div>
+              </div>
+              <div className="wa-placeholder">
+                <div style={{ fontWeight: 600 }}>Sin iniciar</div>
+                <p style={{ maxWidth: 320, textAlign: 'center', fontSize: 13 }}>Aún no se ha enviado ningún mensaje. Pulsa el botón para enviar la plantilla de primer contacto.</p>
+                <button
+                  className="wa-ctrl-btn"
+                  style={{ background: '#e8f5e9', color: WA_GREEN }}
+                  disabled={iniciandoWhatsApp || !selectedConvLead?.whatsapp?.trim()}
+                  onClick={() => iniciarWhatsApp(selectedConvLead)}
+                >{iniciandoWhatsApp ? 'Iniciando…' : 'Iniciar WhatsApp'}</button>
+                {!selectedConvLead?.whatsapp?.trim() && <p style={{ fontSize: 12 }}>Agrega el WhatsApp en la ficha del lead.</p>}
+                {selectedConvLead && <button className="wa-ctrl-btn" onClick={() => { setView('kanban'); setSelectedLead(selectedConvLead); }}>Ver ficha</button>}
+              </div>
+            </>
           ) : (
             <>
               <div className="wa-chat-header">

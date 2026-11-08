@@ -9,6 +9,7 @@ import LeadsTable from "@/components/crm/LeadsTable";
 import LeadDetailModal from "@/components/crm/LeadDetailModal";
 import NewAppointmentModal from "@/components/crm/NewAppointmentModal";
 import NewLeadModal from "@/components/crm/NewLeadModal";
+import { conversacionDelLead, conversacionesConPendientes } from "@/lib/whatsapp/iniciar";
 const supabase = createClient();
 
 const STAGES = [
@@ -129,6 +130,7 @@ export default function CRM() {
   const [editTexto, setEditTexto] = useState("");
   const [whatsConvs, setWhatsConvs] = useState([]);
   const [convsLoading, setConvsLoading] = useState(true);
+  const [convsLoaded, setConvsLoaded] = useState(false);
   const [ultimoUsuarioAtPorConv, setUltimoUsuarioAtPorConv] = useState({});
   const [selectedConv, setSelectedConv] = useState(null);
   const [convMessages, setConvMessages] = useState([]);
@@ -147,6 +149,8 @@ export default function CRM() {
   const sendingAgentRef = useRef(false);
   const whatsConvsPollingRef = useRef(false);
   const [sendingReactivacion, setSendingReactivacion] = useState(false);
+  const iniciandoWhatsAppRef = useRef(false);
+  const [iniciandoWhatsApp, setIniciandoWhatsApp] = useState(false);
   const [sendingInfoLeadId, setSendingInfoLeadId] = useState(null);
   const [leadInfoDraft, setLeadInfoDraft] = useState("");
   const [labScenario, setLabScenario] = useState("ads");
@@ -644,8 +648,10 @@ export default function CRM() {
       data = fallback.data;
     }
     setWhatsConvs(data || []);
+    setConvsLoaded(true);
     setConvsLoading(false);
     fetchUltimosUsuarioMensajes(data || []);
+    return data || [];
   };
 
   // Se usa para la ventana de servicio de 24h de WhatsApp, que corre desde el
@@ -742,6 +748,7 @@ export default function CRM() {
 
   const fetchConvMessages = async (convId, { silent = false } = {}) => {
     if (!silent) setConvMessages([]);
+    if (!convId || convId.startsWith('sin-iniciar:')) return;
     const { data, error } = await supabase
       .from("whatsapp_mensajes")
       .select("id, rol, contenido, created_at")
@@ -988,7 +995,7 @@ export default function CRM() {
   };
 
   const setHumanMode = async (conv, enabled) => {
-    if (!conv) return;
+    if (!conv || conv.sin_iniciar) return;
     const { error } = await supabase
       .from("whatsapp_conversaciones")
       .update({
@@ -1010,7 +1017,7 @@ export default function CRM() {
   };
 
   const setConvVisto = async (conv, visto) => {
-    if (!conv) return;
+    if (!conv || conv.sin_iniciar) return;
     const visto_at = visto ? new Date().toISOString() : null;
     const { error } = await supabase
       .from("whatsapp_conversaciones")
@@ -1036,7 +1043,7 @@ export default function CRM() {
   // Recibe el texto desde MessageInputBar (el borrador vive ahí para que teclear
   // no vuelva a dibujar todo el CRM). Devuelve true si se envió.
   const sendAgentReply = async (agentMessage) => {
-    if (!selectedConv || !agentMessage?.trim() || sendingAgentRef.current) return false;
+    if (!selectedConv || selectedConv.sin_iniciar || !agentMessage?.trim() || sendingAgentRef.current) return false;
     sendingAgentRef.current = true;
     setSendingAgent(true);
     try {
@@ -1107,7 +1114,7 @@ export default function CRM() {
   };
 
   const sendReactivacion = async () => {
-    if (!selectedConv || sendingReactivacion) return;
+    if (!selectedConv || selectedConv.sin_iniciar || sendingReactivacion) return;
     setSendingReactivacion(true);
     try {
       const res = await fetch("/api/whatsapp/reactivar-manual", {
@@ -1223,10 +1230,11 @@ export default function CRM() {
     return matchV && matchS;
   });
 
-  const conversationPhaseOptions = ["todas", ...Array.from(new Set(whatsConvs.map((c) => c.fase).filter(Boolean)))];
+  const convsConPendientes = useMemo(() => convsLoaded ? conversacionesConPendientes(whatsConvs, leads) : whatsConvs, [convsLoaded, whatsConvs, leads]);
+  const conversationPhaseOptions = ["todas", ...Array.from(new Set(convsConPendientes.map((c) => c.fase).filter(Boolean)))];
   // Lookup O(1) en vez de leads.find() por cada conversación (~400 × ~400 en cada render).
   const leadsById = useMemo(() => new Map(leads.map((l) => [l.id, l])), [leads]);
-  const filteredWhatsConvs = useMemo(() => whatsConvs.filter((conv) => {
+  const filteredWhatsConvs = useMemo(() => convsConPendientes.filter((conv) => {
     const lead = leadsById.get(conv.lead_id);
     // Asesores solo ven conversaciones de sus leads
     if (!isAdmin && currentProfile?.id) {
@@ -1240,11 +1248,19 @@ export default function CRM() {
       lead?.email?.toLowerCase().includes(searchValue);
     const matchesMode =
       convModeFilter === "todos" ||
-      (convModeFilter === "humano" ? !!conv.modo_humano : !conv.modo_humano);
+      (!conv.sin_iniciar && (convModeFilter === "humano" ? !!conv.modo_humano : !conv.modo_humano));
     const matchesPhase =
       convPhaseFilter === "todas" || (conv.fase || "—") === convPhaseFilter;
     return matchesSearch && matchesMode && matchesPhase;
-  }), [whatsConvs, leadsById, isAdmin, currentProfile?.id, convSearch, convModeFilter, convPhaseFilter]);
+  }), [convsConPendientes, leadsById, isAdmin, currentProfile?.id, convSearch, convModeFilter, convPhaseFilter]);
+
+  // Si entró un mensaje o se inició desde otra vista, reemplazar el pendiente.
+  useEffect(() => {
+    if (!selectedConv?.sin_iniciar) return;
+    const lead = leadsById.get(selectedConv.lead_id);
+    const real = lead && conversacionDelLead(whatsConvs, lead);
+    if (real) { setSelectedConv(real); fetchConvMessages(real.id); }
+  }, [whatsConvs, selectedConv?.id, leadsById]);
 
   const selectedConvLead = leads.find((lead) => lead.id === selectedConv?.lead_id) || null;
   const selectedConvOwner = vendedores.find((v) => v.id === selectedConv?.tomado_por) || null;
@@ -1252,6 +1268,7 @@ export default function CRM() {
 
   const getPhaseLabel = (fase) => {
     const labels = {
+      sin_iniciar: "Sin iniciar",
       saludo: "Saludo",
       programa: "Programa",
       correo: "Correo",
@@ -1267,7 +1284,7 @@ export default function CRM() {
     return labels[fase] || fase || "Sin fase";
   };
 
-  const getModeLabel = (conv) => conv?.modo_humano ? "Humano" : "Bot";
+  const getModeLabel = (conv) => conv?.sin_iniciar ? "Sin iniciar" : conv?.modo_humano ? "Humano" : "Bot";
 
   const getConversationBadgeStyle = (type, value) => {
     if (type === "mode") {
@@ -1422,21 +1439,6 @@ export default function CRM() {
     setShowForm(false);
     setNewLead({ nombre: "", email: "", whatsapp: "", tipo_renta: "noche", fecha_checkin: "", fecha_checkout: "", num_personas: 1, loft_id: "", presupuesto: "", valor: "", notas: "", asignado_a: currentUser.id });
     showToast("Lead agregado ✓");
-    if (data[0].whatsapp) {
-      fetch("/api/whatsapp/bienvenida", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ lead_id: data[0].id }),
-      }).then(async (res) => {
-        if (res.ok) {
-          showToast("Mensaje de bienvenida enviado por WhatsApp ✓");
-          fetchWhatsConvs();
-        } else {
-          const err = await res.json().catch(() => ({}));
-          showToast((err.error || "Error") + (err.numero_intentado ? ` → ${err.numero_intentado}` : ""), "error");
-        }
-      }).catch((e) => showToast("WhatsApp fetch error: " + e.message, "error"));
-    }
   };
 
   const deleteLead = async (id) => {
@@ -1485,10 +1487,32 @@ export default function CRM() {
   const pipelineValue = leads.filter((l) => !["rentado", "no_interesado"].includes(normalizeStage(l.stage))).reduce((a, b) => a + b.valor, 0);
   const convRate = leads.length ? Math.round((leads.filter((l) => normalizeStage(l.stage) === "rentado").length / leads.length) * 100) : 0;
 
-  const hasConversation = (lead) => whatsConvs.some(c => c.lead_id === lead.id || c.whatsapp === lead.whatsapp);
+  const hasConversation = (lead) => !!conversacionDelLead(whatsConvs, lead);
+
+  const iniciarWhatsApp = async (lead) => {
+    if (iniciandoWhatsAppRef.current) return;
+    if (!window.confirm('Se enviará una plantilla de primer contacto. Si aún no está disponible, se usará el seguimiento que menciona fechas compartidas. Confirma que el prospecto solicitó información y que ambos textos aplican.')) return;
+    iniciandoWhatsAppRef.current = true;
+    setIniciandoWhatsApp(true);
+    try {
+      const res = await fetch('/api/whatsapp/iniciar', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ lead_id: lead.id }),
+      });
+      const data = await res.json();
+      await fetchWhatsConvs();
+      if (!res.ok) throw new Error(data.error || 'No se pudo iniciar WhatsApp');
+      showToast(data.existente ? 'La conversación ya existe. Usa Ver conversación.' : 'Plantilla aceptada por WhatsApp. Espera la respuesta del prospecto.');
+    } catch (e) {
+      showToast(e?.message || 'No se confirmó el envío. Revisa la conversación antes de reintentar.', 'error');
+    } finally {
+      iniciandoWhatsAppRef.current = false;
+      setIniciandoWhatsApp(false);
+    }
+  };
 
   const goToConversation = (lead) => {
-    const conv = whatsConvs.find(c => c.lead_id === lead.id || c.whatsapp === lead.whatsapp);
+    const conv = conversacionDelLead(whatsConvs, lead);
     fetchWhatsConvs().then(() => {
       setView("convs");
       if (conv) {
@@ -1972,6 +1996,9 @@ export default function CRM() {
             getNombreVendedor={getNombreVendedor}
             goToConversation={goToConversation}
             hasConversation={hasConversation}
+            conversacionesCargadas={convsLoaded}
+            iniciarWhatsApp={iniciarWhatsApp}
+            iniciandoWhatsApp={iniciandoWhatsApp}
           />
         )}
 
@@ -2473,6 +2500,8 @@ export default function CRM() {
             STAGES={STAGES}
             normalizeStage={normalizeStage}
             ultimoUsuarioAtPorConv={ultimoUsuarioAtPorConv}
+            iniciarWhatsApp={iniciarWhatsApp}
+            iniciandoWhatsApp={iniciandoWhatsApp}
           />
         )}
 
@@ -2564,7 +2593,9 @@ export default function CRM() {
             sendingInfoLeadId={sendingInfoLeadId}
             leadInfoDraft={leadInfoDraft}
             setLeadInfoDraft={setLeadInfoDraft}
-            activeConversation={whatsConvs.find((conv) => conv.lead_id === lead.id || conv.whatsapp === lead.whatsapp) || null}
+            iniciarWhatsApp={iniciarWhatsApp}
+            iniciandoWhatsApp={iniciandoWhatsApp}
+            activeConversation={conversacionDelLead(whatsConvs, lead)}
             getLeadNextStep={getLeadNextStep}
             leadTimelineLoading={leadTimelineLoading}
             leadTimeline={leadTimeline}

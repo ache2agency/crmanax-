@@ -11,6 +11,9 @@ export default function KanbanBoard({
   getNombreVendedor,
   goToConversation,
   hasConversation,
+  conversacionesCargadas = true,
+  iniciarWhatsApp,
+  iniciandoWhatsApp = false,
 }) {
   return (
     <div style={{ display: "flex", flexDirection: "row", gap: 14, overflowX: "auto", paddingBottom: 8, WebkitOverflowScrolling: "touch", minWidth: "max-content" }}>
@@ -61,6 +64,16 @@ export default function KanbanBoard({
                   >
                     💬 Ver conversación
                   </button>
+                )}
+                {conversacionesCargadas && !hasConversation(lead) && (
+                  <div style={{ marginTop: 8 }}>
+                    <span style={{ fontSize: 11, color: '#92400e', background: '#fef3c7', borderRadius: 8, padding: '2px 7px' }}>Sin iniciar</span>
+                    <button
+                      disabled={iniciandoWhatsApp || !lead.whatsapp?.trim()}
+                      onClick={(e) => { e.stopPropagation(); iniciarWhatsApp(lead); }}
+                      style={{ marginTop: 6, width: '100%', border: '1px solid #25D36666', borderRadius: 6, background: '#e8f5e9', color: '#075E54', padding: '7px 4px', cursor: 'pointer', fontWeight: 600 }}
+                    >{iniciandoWhatsApp ? 'Iniciando…' : 'Iniciar WhatsApp'}</button>
+                  </div>
                 )}
               </div>
             ))}

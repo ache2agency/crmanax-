@@ -30,6 +30,10 @@ export function getMetaConfig() {
   }
 }
 
+export class MetaTemplateError extends Error {
+  constructor(message: string, public code: number | null, public status: number) { super(message) }
+}
+
 export async function sendMetaWhatsAppTemplate({
   to,
   templateName,
@@ -62,7 +66,7 @@ export async function sendMetaWhatsAppTemplate({
   if (!response.ok) {
     const code = data?.error?.code ? `#${data.error.code} ` : ''
     const detail = `${code}${data?.error?.message || `HTTP ${response.status}`}`
-    throw new Error(detail)
+    throw new MetaTemplateError(detail, typeof data?.error?.code === 'number' ? data.error.code : null, response.status)
   }
   return { id: data?.messages?.[0]?.id || null, raw: data }
 }
