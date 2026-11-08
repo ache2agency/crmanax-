@@ -71,7 +71,6 @@ app/
       status/          # Estado de configuración del proveedor de WhatsApp
     emails/            # Secuencias de email
     rag/               # Base de conocimiento
-    debug-supabase/    # Endpoint de debug para inspeccionar conversaciones reales
 
 components/crm/
   KanbanBoard.jsx      # Tablero Kanban (7 etapas)
