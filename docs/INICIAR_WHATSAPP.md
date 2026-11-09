@@ -1,6 +1,6 @@
 # Iniciar WhatsApp — Tarea 27
 
-Al registrar un prospecto manual sin chat aparece **Sin iniciar** en su tarjeta de Kanban y en Conversaciones, con **Iniciar WhatsApp** ahí mismo (fila y detalle), además de la ficha. **El alta manual nunca envía mensajes**: solo el clic explícito y su confirmación llaman al endpoint. Con conversación existente, por lead o teléfono equivalente, aparece **Ver conversación**. Un WhatsApp vacío o un envío en curso deshabilitan el botón; el servidor vuelve a validar el número.
+Al registrar un prospecto manual sin chat aparece **Sin iniciar** en su tarjeta de Kanban y en Conversaciones, con **Iniciar WhatsApp** ahí mismo (fila y detalle), además de la ficha. **El alta manual nunca envía mensajes**: solo el clic explícito llama al endpoint, sin confirmación adicional (Tarea 35-bis). Al terminar bien aparece durante tres segundos el aviso no bloqueante «✓ WhatsApp enviado a {nombre}»; los errores conservan su aviso. Con conversación existente, por lead o teléfono equivalente, aparece **Ver conversación**. Un WhatsApp vacío o un envío en curso deshabilitan el botón; el servidor vuelve a validar el número.
 
 `POST /api/whatsapp/iniciar` recibe exclusivamente `{ "lead_id": "uuid" }`. Exige sesión Supabase, consulta el lead con RLS y confirma asignación/admin dentro de la reserva transaccional. No acepta teléfono, usuario o texto arbitrarios. `/api/whatsapp/bienvenida` es un alias protegido para clientes anteriores. No se modifica `/reactivar-manual` ni el pipeline.
 
@@ -32,7 +32,7 @@ Texto documentado del respaldo:
 
 > Hola {{1}}, seguimos con tu solicitud de información sobre disponibilidad en Anaxágoras 41 para las fechas que nos compartiste. ¿Sigue vigente tu interés para que un asesor te confirme los detalles?
 
-Este respaldo presupone fechas compartidas; la confirmación del CRM lo advierte. La aprobación de la principal procede de la confirmación de Harold; esta tarea no consultó ni modificó plantillas en Meta. No se verificó la vigencia del respaldo. Sus botones históricos **Sí, envíame la info** y **Ya no, gracias** también se interpretan como consentimiento/negativa cuando corresponden a este primer contacto. Las reactivaciones ajenas conservan su manejo anterior.
+Este respaldo presupone fechas compartidas. La aprobación de la principal procede de la confirmación de Harold; esta tarea no consultó ni modificó plantillas en Meta. No se verificó la vigencia del respaldo. Sus botones históricos **Sí, envíame la info** y **Ya no, gracias** también se interpretan como consentimiento/negativa cuando corresponden a este primer contacto. Las reactivaciones ajenas conservan su manejo anterior.
 
 ## Respuesta y control humano
 

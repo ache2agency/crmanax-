@@ -107,15 +107,33 @@ test('pendientes respetan búsqueda, fase, asignación y no se clasifican como B
  assert.equal(filter({currentProfile:{id:'otro'}}).length,0);assert.equal(filter({isAdmin:true,currentProfile:{id:'otro'}}).length,1)
 })
 
-test('handler compartido real envía solo tras confirmación de clic y bloquea doble clic',async()=>{
- let confirmed=false,requests=0,release
- const ref={current:false},busy=[]
+test('handler compartido real envía al clic sin confirmación, bloquea doble clic y muestra éxito',async()=>{
+ let requests=0,release
+ const ref={current:false},busy=[],toasts=[]
  const start=crmFunction('iniciarWhatsApp',{
-  iniciandoWhatsAppRef:ref,setIniciandoWhatsApp:v=>busy.push(v),window:{confirm:text=>{assert.equal(text,'Se enviará la plantilla de primer contacto a Ana (55 1234 5678). ¿Continuar?');return confirmed}},
+  iniciandoWhatsAppRef:ref,setIniciandoWhatsApp:v=>busy.push(v),window:{confirm:()=>assert.fail('No debe pedir confirmación')},
   fetch:async(url,init)=>{requests++;assert.equal(url,'/api/whatsapp/iniciar');assert.equal(JSON.parse(init.body).lead_id,lead.id);await new Promise(r=>{release=r});return {ok:true,json:async()=>({conversacion_id:'real'})}},
-  fetchWhatsConvs:async()=>[],showToast:()=>{},
+  fetchWhatsConvs:async()=>[],showToast:(...args)=>toasts.push(args),
  })
- assert.equal(requests,0);await start(lead);assert.equal(requests,0)
- confirmed=true;const first=start(lead);await start(lead);assert.equal(requests,1)
+ assert.equal(requests,0)
+ const first=start(lead);await start(lead);assert.equal(requests,1);assert.deepEqual(busy,[true]);assert.deepEqual(toasts,[])
  release();await first;assert.deepEqual(busy,[true,false]);assert.equal(ref.current,false)
+ assert.deepEqual(toasts,[[`✓ WhatsApp enviado a ${lead.nombre}`]])
+})
+
+test('inicio conserva avisos de conversación existente y error sin anunciar un envío nuevo',async()=>{
+ for(const scenario of [
+  {ok:true,data:{existente:true},toast:['La conversación ya existe. Usa Ver conversación.']},
+  {ok:false,data:{error:'Ya se envió en las últimas 24 horas'},toast:['Ya se envió en las últimas 24 horas','error']},
+  {error:new Error('Sin conexión'),toast:['Sin conexión','error']},
+ ]) {
+  const ref={current:false},busy=[],toasts=[]
+  const start=crmFunction('iniciarWhatsApp',{
+   iniciandoWhatsAppRef:ref,setIniciandoWhatsApp:v=>busy.push(v),
+   fetch:async()=>{if(scenario.error)throw scenario.error;return {ok:scenario.ok,json:async()=>scenario.data}},
+   fetchWhatsConvs:async()=>[],showToast:(...args)=>toasts.push(args),
+  })
+  await start(lead)
+  assert.deepEqual(toasts,[scenario.toast]);assert.deepEqual(busy,[true,false]);assert.equal(ref.current,false)
+ }
 })
