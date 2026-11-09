@@ -33,9 +33,10 @@ export function escenario(fase = 'checkin', whatsapp = '+523112694172', opciones
   const db = {
     leads: [{ id: 'lead', nombre: 'Ana', stage: 'cotizado', notas: 'Nota del asesor' }],
     whatsapp_conversaciones: [{ id: 'conv', lead_id: 'lead', whatsapp, fase, estado: 'abierta', ultimo_mensaje_at: new Date().toISOString() }],
-    whatsapp_mensajes: [], lead_activities: [],
+    whatsapp_mensajes: [], lead_activities: [], admin_test_mode: [], admin_ventana_24h: [],
   }
   const enviados = []
+  const pushes = []
   const supabase = { async rpc(name,args) { return opciones.rpc ? opciones.rpc(name,args,db) : {data:{status:'ignored'},error:null} }, from(table) {
     const filters = []
     let op = 'select', values, limit, selectError
@@ -57,11 +58,21 @@ export function escenario(fase = 'checkin', whatsapp = '+523112694172', opciones
       limit(n) { limit = n; return query },
       update(v) { op = 'update'; values = v; return query },
       insert(v) { op = 'insert'; values = v; return query },
+      upsert(v) { op = 'upsert'; values = v; return query },
+      delete() { op = 'delete'; return query },
       async maybeSingle() { const result = await query; return { ...result, data: result.data?.[0] || null } },
       then(resolve, reject) {
         try {
           if (selectError) return Promise.resolve({ data: null, error: selectError }).then(resolve, reject)
           let rows = db[table].filter(row => filters.every(fn => fn(row)))
+          if (op === 'delete') db[table] = db[table].filter(row => !rows.includes(row))
+          if (op === 'upsert') {
+            for (const value of values) {
+              const existente = db[table].find(row => row.whatsapp === value.whatsapp)
+              if (existente) Object.assign(existente, value)
+              else db[table].push({ ...value })
+            }
+          }
           if (op === 'update') rows.forEach(row => Object.assign(row, values))
           if (op === 'insert') { rows = values.map(v => ({ ...v, id: `${table}-${db[table].length}`, created_at: new Date().toISOString() })); db[table].push(...rows) }
           // La inserción conserva el orden aun cuando dos timestamps coincidan.
@@ -78,7 +89,7 @@ export function escenario(fase = 'checkin', whatsapp = '+523112694172', opciones
   } }
   const exports = {}
   runInNewContext(source + '\nexports.catalogoPrueba = MSG.precios() + flowReminder("confirmar_precios");', {
-    exports, process: { env: { ...process.env, BOT_FAQ_EN_ESPERA: opciones.faqEspera } }, Response, setTimeout: opciones.setTimeout || ((fn) => { fn() }), Date: opciones.hoy ? class extends Date { constructor(...args) { super(...(args.length ? args : [opciones.hoy + 'T12:00:00Z'])) } } : Date, console: { log() {}, error: console.error },
+    exports, process: { env: { ...process.env, ...(opciones.admin ? { ALERT_WHATSAPP_NUMBER: opciones.admin } : {}), BOT_FAQ_EN_ESPERA: opciones.faqEspera } }, Response, setTimeout: opciones.setTimeout || ((fn) => { fn() }), Date: opciones.ahora ? class extends Date { constructor(...args) { super(...(args.length ? args : [opciones.ahora()])) } static now() { return opciones.ahora() } } : opciones.hoy ? class extends Date { constructor(...args) { super(...(args.length ? args : [opciones.hoy + 'T12:00:00Z'])) } } : Date, console: { log() {}, error: console.error },
     require(name) {
       if (name === '@/lib/whatsapp/iniciar') return iniciar
       if (name === '@/lib/anaxagoras/textos') return textos
@@ -86,7 +97,7 @@ export function escenario(fase = 'checkin', whatsapp = '+523112694172', opciones
       if (name.endsWith('/bot-parsers')) return opciones.hoy ? { ...parsers, hoyISO: () => opciones.hoy } : parsers
       if (name === '@/utils/supabase/server') return { createServiceRoleClient: () => supabase }
       if (name.endsWith('/provider')) return { normalizePhoneNumber: n => n.startsWith('+') ? n : `+${n}`, sendMetaWhatsAppMessage: async msg => enviados.push(msg) }
-      if (name === '@/lib/push') return { enviarPushATodos: async () => {} }
+      if (name === '@/lib/push') return { enviarPushATodos: async msg => { if (opciones.pushError) throw Error('push simulado falló'); pushes.push(msg) } }
       if (name === 'next/server') return { after() {} }
       if (name.endsWith('/seguimiento')) return {}
       if (opciones.consultar && name === '@/lib/disponibilidad') return { loftsDisponibles: opciones.consultar }
@@ -96,7 +107,7 @@ export function escenario(fase = 'checkin', whatsapp = '+523112694172', opciones
     },
   })
   return {
-    db, supabase, enviados, catalogo: exports.catalogoPrueba, respuestas: () => enviados.filter(msg => msg.to === whatsapp),
+    db, supabase, enviados, pushes, catalogo: exports.catalogoPrueba, respuestas: () => enviados.filter(msg => msg.to === whatsapp),
     async enviar(text, message = {}) {
       const response = await exports.POST(new Request('http://localhost/api/whatsapp/webhook', {
         method: 'POST', body: JSON.stringify({ object: 'whatsapp_business_account', entry: [{ changes: [{ value: {
