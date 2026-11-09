@@ -1491,7 +1491,6 @@ export default function CRM() {
 
   const iniciarWhatsApp = async (lead) => {
     if (iniciandoWhatsAppRef.current) return;
-    if (!window.confirm('Se enviará una plantilla de primer contacto. Si aún no está disponible, se usará el seguimiento que menciona fechas compartidas. Confirma que el prospecto solicitó información y que ambos textos aplican.')) return;
     iniciandoWhatsAppRef.current = true;
     setIniciandoWhatsApp(true);
     try {
@@ -1502,7 +1501,7 @@ export default function CRM() {
       const data = await res.json();
       await fetchWhatsConvs();
       if (!res.ok) throw new Error(data.error || 'No se pudo iniciar WhatsApp');
-      showToast(data.existente ? 'La conversación ya existe. Usa Ver conversación.' : 'Plantilla aceptada por WhatsApp. Espera la respuesta del prospecto.');
+      showToast(data.existente ? 'La conversación ya existe. Usa Ver conversación.' : `✓ WhatsApp enviado a ${lead.nombre}`);
     } catch (e) {
       showToast(e?.message || 'No se confirmó el envío. Revisa la conversación antes de reintentar.', 'error');
     } finally {

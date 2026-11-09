@@ -15,7 +15,7 @@ try {
     create table public.whatsapp_conversaciones(id uuid primary key default gen_random_uuid(), whatsapp text not null,
       lead_id uuid references leads(id), estado text default 'abierta', fase text default 'saludo',
       modo_humano boolean default false, humano_intervino boolean default false, tomado_por uuid,
-      provider text, ultimo_mensaje_at timestamptz default now(), created_at timestamptz default now());
+      ultimo_mensaje_at timestamptz default now(), created_at timestamptz default now());
     create table public.whatsapp_mensajes(id uuid primary key default gen_random_uuid(), conversacion_id uuid references whatsapp_conversaciones(id),
       rol text not null, contenido text not null, raw_payload jsonb, created_at timestamptz default now());`)
   await db.exec(migration)

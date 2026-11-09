@@ -62,11 +62,11 @@ begin
     end if;
     update public.whatsapp_conversaciones set whatsapp = p_telefono, lead_id = p_lead_id,
       estado = 'abierta', fase = 'esperando_asesor', modo_humano = true, humano_intervino = true, tomado_por = p_usuario,
-      provider = 'meta', ultimo_mensaje_at = now() where id = c.id;
+      ultimo_mensaje_at = now() where id = c.id;
   else
     insert into public.whatsapp_conversaciones
-      (whatsapp, lead_id, estado, fase, modo_humano, humano_intervino, tomado_por, provider, ultimo_mensaje_at)
-      values (p_telefono, p_lead_id, 'abierta', 'esperando_asesor', true, true, p_usuario, 'meta', now())
+      (whatsapp, lead_id, estado, fase, modo_humano, humano_intervino, tomado_por, ultimo_mensaje_at)
+      values (p_telefono, p_lead_id, 'abierta', 'esperando_asesor', true, true, p_usuario, now())
       returning * into c;
   end if;
   -- Registro previo: si la red falla, NO afirmar que fue enviado ni volver a mandarlo.
