@@ -1491,7 +1491,7 @@ export default function CRM() {
 
   const iniciarWhatsApp = async (lead) => {
     if (iniciandoWhatsAppRef.current) return;
-    if (!window.confirm('Se enviará una plantilla de primer contacto. Si aún no está disponible, se usará el seguimiento que menciona fechas compartidas. Confirma que el prospecto solicitó información y que ambos textos aplican.')) return;
+    if (!window.confirm(`Se enviará la plantilla de primer contacto a ${lead.nombre} (${lead.whatsapp}). ¿Continuar?`)) return;
     iniciandoWhatsAppRef.current = true;
     setIniciandoWhatsApp(true);
     try {

@@ -111,7 +111,7 @@ test('handler compartido real envía solo tras confirmación de clic y bloquea d
  let confirmed=false,requests=0,release
  const ref={current:false},busy=[]
  const start=crmFunction('iniciarWhatsApp',{
-  iniciandoWhatsAppRef:ref,setIniciandoWhatsApp:v=>busy.push(v),window:{confirm:()=>confirmed},
+  iniciandoWhatsAppRef:ref,setIniciandoWhatsApp:v=>busy.push(v),window:{confirm:text=>{assert.equal(text,'Se enviará la plantilla de primer contacto a Ana (55 1234 5678). ¿Continuar?');return confirmed}},
   fetch:async(url,init)=>{requests++;assert.equal(url,'/api/whatsapp/iniciar');assert.equal(JSON.parse(init.body).lead_id,lead.id);await new Promise(r=>{release=r});return {ok:true,json:async()=>({conversacion_id:'real'})}},
   fetchWhatsConvs:async()=>[],showToast:()=>{},
  })
