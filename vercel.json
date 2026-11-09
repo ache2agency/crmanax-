@@ -7,8 +7,7 @@
   ],
   "git": {
     "deploymentEnabled": {
-      "codex/crmanax-iniciar-whatsapp": false,
-      "codex/crmanax-iniciar-fix": false
+      "codex/crmanax-iniciar-whatsapp": false
     }
   }
 }
