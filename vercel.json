@@ -8,7 +8,8 @@
   "git": {
     "deploymentEnabled": {
       "codex/crmanax-iniciar-whatsapp": false,
-      "codex/crmanax-bot-solo-excel": false
+      "codex/crmanax-bot-solo-excel": false,
+      "codex/lectura-https": false
     }
   }
 }
