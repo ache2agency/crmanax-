@@ -1823,7 +1823,7 @@ export default function CRM() {
           .lab-chat-panel { order: 1; min-height: 420px !important; }
           .lab-state-compact { display: flex; flex-wrap: wrap; gap: 8px 16px; }
           .lab-state-compact div { font-size: 11px; }
-          .kanban-wrapper { overflow-x: auto !important; -webkit-overflow-scrolling: touch; overscroll-behavior-x: contain; padding-bottom: 16px; padding-left: 8px !important; padding-right: 8px !important; max-width: 100vw !important; }
+          .kanban-wrapper { padding-bottom: 16px; padding-left: 8px !important; padding-right: 8px !important; max-width: 100vw !important; }
         }
       `}</style>
 
@@ -1902,9 +1902,9 @@ export default function CRM() {
         )}
       </div>
 
-      <div className={view === "kanban" ? "kanban-wrapper" : ""} style={{ width: view === "kanban" ? "100%" : undefined, minWidth: view === "kanban" ? 0 : undefined, maxWidth: (view === "agenda" || view === "disponibilidad") ? "none" : 1400, margin: "0 auto", padding: (view === "agenda" || view === "disponibilidad") ? "12px 16px" : view === "convs" ? "0" : "24px", flex: 1, minHeight: 0, display: (view === "convs" || view === "agenda" || view === "disponibilidad") ? "flex" : "block", flexDirection: "column", overflowY: (view === "convs" || view === "agenda" || view === "disponibilidad") ? "hidden" : "auto", overflowX: view === "kanban" ? "auto" : undefined, overscrollBehaviorX: "contain" }}>
-        {/* El fondo debe crecer con las columnas dentro del área de scroll. */}
-        <div style={view === "kanban" ? { minWidth: "max-content", minHeight: "100%", background: "#f5f7fa" } : { display: "contents" }}>
+      <div className={view === "kanban" ? "kanban-wrapper" : ""} style={{ width: view === "kanban" ? "100%" : undefined, minWidth: view === "kanban" ? 0 : undefined, maxWidth: (view === "agenda" || view === "disponibilidad") ? "none" : 1400, margin: "0 auto", padding: (view === "agenda" || view === "disponibilidad") ? "12px 16px" : view === "convs" ? "0" : "24px", flex: 1, minHeight: 0, display: (view === "convs" || view === "agenda" || view === "disponibilidad") ? "flex" : "block", flexDirection: "column", overflowY: (view === "convs" || view === "agenda" || view === "disponibilidad") ? "hidden" : "auto", overflowX: view === "kanban" ? "hidden" : undefined, overscrollBehaviorX: "contain" }}>
+        {/* Stats y filtros conservan el ancho visible; solo las columnas se deslizan. */}
+        <div style={view === "kanban" ? { minHeight: "100%", background: "#f5f7fa" } : { display: "contents" }}>
         {/* STATS */}
         <div style={{ display: (view === "convs" || view === "agenda" || view === "disponibilidad") ? "none" : "block", marginBottom: 20 }}>
           {/* Stats compactas */}
@@ -1950,7 +1950,7 @@ export default function CRM() {
         </div>
 
         {/* FILTROS */}
-        <div style={{ display: (view === "convs" || view === "agenda" || view === "disponibilidad") ? "none" : "flex", gap: 12, marginBottom: 24, alignItems: "center" }}>
+        <div style={{ display: (view === "convs" || view === "agenda" || view === "disponibilidad") ? "none" : "flex", flexWrap: view === "kanban" ? "wrap" : undefined, gap: 12, marginBottom: 24, alignItems: "center" }}>
           <input className="input" style={{ maxWidth: 260 }} placeholder="🔍  Buscar lead..." value={search} onChange={e => setSearch(e.target.value)} />
           {isAdmin && (
             <select className="select" style={{ maxWidth: 200 }} value={filterVendedor} onChange={e => setFilterVendedor(e.target.value)}>
@@ -1958,7 +1958,7 @@ export default function CRM() {
               {vendedores.map(v => <option key={v.id} value={v.id}>{v.nombre || v.email}</option>)}
             </select>
           )}
-          <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 12 }}>
+          <div style={{ marginLeft: "auto", display: "flex", flexWrap: view === "kanban" ? "wrap" : undefined, alignItems: "center", gap: 12 }}>
             <span style={{ fontSize: 12, color: "#555" }}>{filteredLeads.length} leads mostrados</span>
             <button className="btn btn-ghost" style={{ fontSize: 11 }} onClick={() => {
               const headers = ["Nombre","Email","WhatsApp","Zona","Cuartos","Presupuesto","Stage","Fecha","Valor","Notas"];
@@ -1985,21 +1985,23 @@ export default function CRM() {
 
         {/* KANBAN */}
         {!loading && view === "kanban" && (
-          <KanbanBoard
-            STAGES={STAGES}
-            byStage={byStage}
-            formatPeso={formatPeso}
-            dragId={dragId}
-            setDragId={setDragId}
-            handleDrop={handleDrop}
-            setSelectedLead={setSelectedLead}
-            getNombreVendedor={getNombreVendedor}
-            goToConversation={goToConversation}
-            hasConversation={hasConversation}
-            conversacionesCargadas={convsLoaded}
-            iniciarWhatsApp={iniciarWhatsApp}
-            iniciandoWhatsApp={iniciandoWhatsApp}
-          />
+          <div className="kanban-scroll" style={{ overflowX: "auto", WebkitOverflowScrolling: "touch", overscrollBehaviorX: "contain", background: "#f5f7fa" }}>
+            <KanbanBoard
+              STAGES={STAGES}
+              byStage={byStage}
+              formatPeso={formatPeso}
+              dragId={dragId}
+              setDragId={setDragId}
+              handleDrop={handleDrop}
+              setSelectedLead={setSelectedLead}
+              getNombreVendedor={getNombreVendedor}
+              goToConversation={goToConversation}
+              hasConversation={hasConversation}
+              conversacionesCargadas={convsLoaded}
+              iniciarWhatsApp={iniciarWhatsApp}
+              iniciandoWhatsApp={iniciandoWhatsApp}
+            />
+          </div>
         )}
 
         {/* LISTA */}
