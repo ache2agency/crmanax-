@@ -92,20 +92,20 @@ function modulo(path, mocks) {
   return exports
 }
 
-test('consulta real de disponibilidad une Excel+iCal y fase2 evita cotizar loft bloqueado', async () => {
+test('consulta real del bot ignora iCal, conserva Excel y cotiza el loft libre', async () => {
   const lofts = [{ id: 'uno', nombre: 'PB-01', tipo: 'chico', orden: 1 }, { id: 'dos', nombre: 'PB-02', tipo: 'chico', orden: 2 }, { id: 'tres', nombre: 'PB-03', tipo: 'mediano', orden: 3 }]
   const rows = [{ loft_id: 'uno', origen: 'excel', ...block('2026-11-02', '2026-11-05') }, { loft_id: 'dos', origen: 'airbnb_ical', ...block('2026-11-02', '2026-11-04') }, { loft_id: 'tres', origen: 'airbnb_ical', ...block('2027-10-31', '2027-11-03') }]
   const db = { from(table) {
     let data = table === 'lofts' ? lofts : rows
-    const q = { select() { return q }, eq() { return q }, order() { return q }, lt(key, value) { data = data.filter(r => r[key] < value); return q }, gt(key, value) { data = data.filter(r => r[key] > value); return q }, then(resolve) { return Promise.resolve({ data, error: null }).then(resolve) } }
+    const q = { select() { return q }, eq() { return q }, order() { return q }, lt(key, value) { data = data.filter(r => r[key] < value); return q }, gt(key, value) { data = data.filter(r => r[key] > value); return q }, maybeSingle() { return Promise.resolve({ data: { ultimo_exito_at: new Date().toISOString() }, error: null }) }, then(resolve) { return Promise.resolve({ data, error: null }).then(resolve) } }
     return q
   } }
-  const { loftsDisponibles } = modulo('../lib/disponibilidad.ts', { '@/utils/supabase/server': { createServiceRoleClient: () => db }, '@/lib/reservas/ical': { ...ical, ventanaIcal: () => ical.ventanaIcal(now) } })
+  const { loftsDisponibles } = modulo('../lib/disponibilidad.ts', { '@/utils/supabase/server': { createServiceRoleClient: () => db }, '@/lib/reservas/conflictos': { fuenteVieja: () => false } })
   const result = await loftsDisponibles({ checkin: '2026-11-02', checkout: '2026-11-04', personas: 1 })
-  assert.deepEqual(Array.from(result.disponibles, l => l.id), ['tres'])
+  assert.deepEqual(Array.from(result.disponibles, l => l.id), ['dos', 'tres'])
   assert.equal((await loftsDisponibles({ checkin: '2026-11-04', checkout: '2026-11-05', personas: 1 })).disponibles.some(l => l.id === 'dos'), true)
   const quote = await resolverDisponibilidadFase2({ nombre: 'Demo', whatsapp: 'ficticio', checkin: '2026-11-02', checkout: '2026-11-04', personas: 1, consultar: loftsDisponibles })
-  assert.equal(quote.loft.id, 'tres')
+  assert.equal(quote.loft.id, 'dos')
   assert.equal((await loftsDisponibles({ checkin: '2027-10-31', checkout: '2027-11-03' })).disponibles.length, 3)
 })
 

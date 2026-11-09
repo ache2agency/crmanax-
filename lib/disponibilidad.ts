@@ -1,5 +1,4 @@
-import { leerMonitorReservas } from '@/lib/reservas/monitor'
-import { ventanaIcal, esColaVentana } from '@/lib/reservas/ical'
+import { fuenteVieja } from '@/lib/reservas/conflictos'
 import { createServiceRoleClient } from '@/utils/supabase/server'
 
 export type LoftDisponible = {
@@ -42,10 +41,8 @@ export async function loftsDisponibles({
 
   if (reservasErr) throw reservasErr
 
-  const { limite } = ventanaIcal()
-  // Las filas iCal y Excel se consultan juntas. Incluso un bloqueo antiguo
-  // conservado por fallo de red deja de aplicarse fuera del horizonte.
-  const ocupadosIds = new Set((traslapes || []).filter(r => r.origen !== 'airbnb_ical' || (r.fecha_checkin < limite && checkin < limite && !esColaVentana(r.fecha_checkin, r.fecha_checkout))).map(r => r.loft_id).filter(Boolean))
+  // El bot usa Excel y reservas propias (crm/motor). iCal solo informa al panel.
+  const ocupadosIds = new Set((traslapes || []).filter(r => r.origen !== 'airbnb_ical').map(r => r.loft_id).filter(Boolean))
 
   const cumpleCapacidad = (loft: LoftDisponible) => {
     if (!personas) return true
@@ -57,7 +54,12 @@ export async function loftsDisponibles({
   const enRango = todos.filter(cumpleCapacidad)
 
   let datosViejos = true
-  try { datosViejos = (await leerMonitorReservas()).frescura.vieja } catch { /* Sin frescura verificable, no afirmar disponibilidad. */ }
+  try {
+    // No depender del monitor conjunto ni de errores/conflictos de Airbnb.
+    const { data: excel, error } = await supabase.from('reservas_fuentes')
+      .select('ultimo_exito_at').eq('fuente_key', 'excel').maybeSingle()
+    if (!error) datosViejos = fuenteVieja(excel?.ultimo_exito_at)
+  } catch { /* Sin frescura verificable del Excel, no afirmar disponibilidad. */ }
   return {
     datosViejos,
     disponibles: enRango.filter((loft) => !ocupadosIds.has(loft.id)),
