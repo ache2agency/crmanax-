@@ -1,6 +1,10 @@
 # Disponibilidad con calendarios Airbnb
 
-Excel y Airbnb se consultan como unión de ocupaciones, con salida exclusiva: del 5 al 8 bloquea las noches 5, 6 y 7. El bot usa `loftsDisponibles`, incluido el motor de fase 2, y el panel usa las mismas filas de `reservas`. No se escribe al Excel ni a Airbnb.
+## 9-nov: el bot ya no usa Airbnb
+
+El bot (webhook y motor de fase 2) y `/api/disponibilidad` usan `loftsDisponibles`: solo el Excel de Dropbox y las reservas propias (`crm`/`motor`) bloquean opciones. Las filas `airbnb_ical` se ignoran. Una reserva del Excel con canal Airbnb sí sigue bloqueando. La frescura del bot depende únicamente del último éxito del Excel en `reservas_fuentes` (máximo 2 horas). Un feed iCal viejo, ausente o fallido no provoca la frase «Un asesor te confirma disponibilidad…»; Excel viejo, ausente o no verificable sí.
+
+El panel de Disponibilidad conserva la unión Excel + Airbnb, los bloqueos grises, la frescura de ambas fuentes y los avisos de posible doble reserva. El sync iCal y su monitor siguen iguales. Se mantiene la salida exclusiva: del 5 al 8 bloquea las noches 5, 6 y 7. No se escribe al Excel ni a Airbnb.
 
 ## Activación por Harold
 
@@ -17,7 +21,7 @@ Respuesta: `{ok, excel, excelError, airbnb, airbnbError}`; `airbnb` contiene `{s
 - Hasta 3 descargas concurrentes, timeout de 10 s por intento y un reintento; HTTP erróneo, calendario incompleto, fechas inválidas o recurrencias no soportadas conservan el snapshot del loft. Otro feed exitoso sí se actualiza. No se siguen redirecciones; se admiten URLs HTTPS de airbnb.com/www.airbnb.com con ruta `/calendar/ical/`.
 - Un calendario válido sin eventos sí elimina bloqueos anteriores del loft. El reemplazo por RPC es una sola transacción con bloqueo por loft y permiso exclusivo de `service_role`. Un error SQL revierte el reemplazo completo. Quitar un loft del JSON NO borra sus bloqueos; revisar manualmente antes de desactivar una fuente.
 - Se ignoran DESCRIPTION, SUMMARY, UID y demás datos del huésped: solo fechas y loft. `Reserved` y `Airbnb (Not available)` bloquean igual, sin intentar distinguir reserva y preparación. Errores de descarga se sustituyen por mensajes fijos; nunca se registran URLs o respuestas crudas.
-- Horizonte móvil: hoy en Ciudad de México hasta la misma fecha dentro de 12 meses, extremo exclusivo. Eventos totalmente fuera se ignoran y los que cruzan el límite se recortan. Por ejemplo, al 31-oct-2026 un bloqueo 27-jul→31-oct-2027 solo ocupa hasta 30-oct-2027. No se descartan días dentro del horizonte por suponer que son la ventana automática de Airbnb: el feed no permite distinguirlos con certeza. Bot y API vuelven a aplicar ese límite al leer snapshots conservados.
+- Horizonte móvil: hoy en Ciudad de México hasta la misma fecha dentro de 12 meses, extremo exclusivo. Eventos totalmente fuera se ignoran y los que cruzan el límite se recortan. Por ejemplo, al 31-oct-2026 un bloqueo 27-jul→31-oct-2027 solo ocupa hasta 30-oct-2027. No se descartan días dentro del horizonte por suponer que son la ventana automática de Airbnb: el feed no permite distinguirlos con certeza. La API del panel vuelve a aplicar ese límite al leer snapshots conservados; el bot ignora todos los bloqueos iCal.
 - Avisos de posible doble reserva: restar a las reservas del Excel los intervalos ocupados del feed actualizado, unir tramos y mostrar loft/fechas en el panel. **No demuestran una doble reserva**: señalan fechas que Alexis debe revisar y bloquear en Airbnb, como PB-01 5→8-dic. No se generan avisos de un feed fallido.
 - iCal puede retrasarse respecto a Airbnb; la disponibilidad sigue siendo estimada y el asesor confirma.
 
