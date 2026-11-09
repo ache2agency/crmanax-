@@ -922,7 +922,7 @@ export async function POST(request: Request) {
         await supabase.from('admin_test_mode').upsert([{ whatsapp: from, activated_at: new Date().toISOString() }])
         await sendMetaWhatsAppMessage({
           to: from,
-          body: '🧪 Modo prueba activado. A partir de ahora te voy a tratar como cliente para que pruebes el flujo real. Escribe "salir" para volver a modo admin (o se apaga solo en 30 min).',
+          body: '🧪 Modo prueba activado. A partir de ahora te voy a tratar como cliente para que pruebes el flujo real. Escribe "salir" para volver a modo admin (o se apaga tras 30 min sin mensajes).',
         })
         return Response.json({ ok: true, admin: true, test_mode: 'activado' })
       }
@@ -940,11 +940,19 @@ export async function POST(request: Request) {
         .maybeSingle()
 
       const activatedAt = testMode?.activated_at ? new Date(testMode.activated_at as string).getTime() : null
-      const testModeVigente = activatedAt !== null && Date.now() - activatedAt < ADMIN_TEST_MODE_MINUTES * 60 * 1000
+      const ahora = Date.now()
+      const testModeVigente = activatedAt !== null && ahora - activatedAt >= 0 &&
+        ahora - activatedAt < ADMIN_TEST_MODE_MINUTES * 60 * 1000
 
       if (!testModeVigente) {
         return Response.json({ ok: true, admin: true })
       }
+      // Ventana de inactividad: solo renovar una sesión que todavía esté vigente.
+      // UPDATE evita recrearla si otro request acaba de ejecutar "salir".
+      const { error: errorRenovacion } = await supabase.from('admin_test_mode')
+        .update({ activated_at: new Date(ahora).toISOString() })
+        .eq('whatsapp', from)
+      if (errorRenovacion) console.error('[webhook] error renovando modo prueba:', errorRenovacion)
       // Modo prueba activo: sigue de largo y se procesa como un lead normal.
     }
 
@@ -1162,8 +1170,10 @@ export async function POST(request: Request) {
     // Se espera (await) porque en serverless el proceso puede cortarse justo al responder,
     // dejando el envío a medias si se dispara sin esperar.
     try {
+      // También en confirmado y aunque luego se suprima una respuesta repetida:
+      // el equipo (incluido Alexis) recibe el mensaje sin otro WhatsApp al cliente.
       await enviarPushATodos({
-        title: `💬 ${profileName || from}`,
+        title: fase === 'confirmado' ? `💬 Cliente confirmado · ${from}` : `💬 ${profileName || from}`,
         body: text.length > 120 ? `${text.slice(0, 117)}...` : text,
       })
     } catch (e) {

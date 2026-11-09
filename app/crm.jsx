@@ -1824,7 +1824,6 @@ export default function CRM() {
           .lab-state-compact { display: flex; flex-wrap: wrap; gap: 8px 16px; }
           .lab-state-compact div { font-size: 11px; }
           .kanban-wrapper { overflow-x: auto !important; -webkit-overflow-scrolling: touch; overscroll-behavior-x: contain; padding-bottom: 16px; padding-left: 8px !important; padding-right: 8px !important; max-width: 100vw !important; }
-          .kanban-wrapper > * { min-width: max-content; }
         }
       `}</style>
 
@@ -1903,7 +1902,9 @@ export default function CRM() {
         )}
       </div>
 
-      <div className={view === "kanban" ? "kanban-wrapper" : ""} style={{ maxWidth: (view === "agenda" || view === "disponibilidad") ? "none" : 1400, margin: "0 auto", padding: (view === "agenda" || view === "disponibilidad") ? "12px 16px" : view === "convs" ? "0" : "24px", flex: 1, minHeight: 0, display: (view === "convs" || view === "agenda" || view === "disponibilidad") ? "flex" : "block", flexDirection: "column", overflowY: (view === "convs" || view === "agenda" || view === "disponibilidad") ? "hidden" : "auto", overscrollBehaviorX: "contain" }}>
+      <div className={view === "kanban" ? "kanban-wrapper" : ""} style={{ width: view === "kanban" ? "100%" : undefined, minWidth: view === "kanban" ? 0 : undefined, maxWidth: (view === "agenda" || view === "disponibilidad") ? "none" : 1400, margin: "0 auto", padding: (view === "agenda" || view === "disponibilidad") ? "12px 16px" : view === "convs" ? "0" : "24px", flex: 1, minHeight: 0, display: (view === "convs" || view === "agenda" || view === "disponibilidad") ? "flex" : "block", flexDirection: "column", overflowY: (view === "convs" || view === "agenda" || view === "disponibilidad") ? "hidden" : "auto", overflowX: view === "kanban" ? "auto" : undefined, overscrollBehaviorX: "contain" }}>
+        {/* El fondo debe crecer con las columnas dentro del área de scroll. */}
+        <div style={view === "kanban" ? { minWidth: "max-content", minHeight: "100%", background: "#f5f7fa" } : { display: "contents" }}>
         {/* STATS */}
         <div style={{ display: (view === "convs" || view === "agenda" || view === "disponibilidad") ? "none" : "block", marginBottom: 20 }}>
           {/* Stats compactas */}
@@ -2517,6 +2518,7 @@ export default function CRM() {
         {!loading && view === "disponibilidad" && (
           <DisponibilidadPanel />
         )}
+        </div>
       </div>
 
       {/* MODAL AYUDA */}
