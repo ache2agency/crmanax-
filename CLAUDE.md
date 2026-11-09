@@ -144,3 +144,7 @@ En cotización las fechas válidas se procesan antes de las FAQ y se añade su r
 ## Iniciar WhatsApp — Tarea 27, ajuste 7-nov (PR #61)
 
 Alta manual sin envíos: pendientes visuales `Sin iniciar` en Kanban y Conversaciones con botón explícito `Iniciar WhatsApp`. `conversacionesConPendientes` deriva la lista de leads sin chat, sin insertar conversaciones/mensajes; no hay seguimiento automático de estos pendientes. IDs visuales no pasan a consultas de mensajes ni controles de chat. Principal `primer_contacto_anax` ya aprobada según Harold; texto literal en `docs/INICIAR_WHATSAPP.md`. SQL v14 solo en archivo, antes del código con autorización. Pruebas de alta real/render/clic/filtros en `tests/sin-iniciar.test.mjs`.
+
+
+## Equipo (Carlos) y Claude Code web
+Antes de trabajar, lee y sigue `docs/GUIA_CLAUDE_EQUIPO.md` (entorno "CRMs lectura", acceso solo lectura, reglas para responder leads y PRs).
