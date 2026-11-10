@@ -194,6 +194,7 @@ test('métodos de escritura/HEAD/OPTIONS rechazados sin auth ni BD', async () =>
 test('rutas reales usan el singleton; GET únicamente y HEAD sin lectura', async () => {
   let initialized = 0
   const server = load('../lib/lectura/server.ts', {
+    './resumen': { crearResumen() {} }, './resumen-config': { configuracionResumen: {} },
     '@/utils/supabase/server': {}, './servicio': { crearLectura() { initialized++; return (req, detail) => Response.json({ detail }) } },
   })
   for (const [name, detail] of [['conversaciones', false], ['conversacion', true]]) {
