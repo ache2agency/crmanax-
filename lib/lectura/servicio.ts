@@ -8,14 +8,14 @@ type Conversation = {
   lead: { nombre: string | null; loft_id: string | null; stage: string | null } | null;
 }
 type Message = { rol: string; contenido: string; created_at: string }
-type Dependencies = { client: () => SupabaseClient; token: () => string | undefined; now?: () => number }
+type Dependencies = { resumen?: (req: Request, client: () => SupabaseClient, current: number) => Promise<Response>; client: () => SupabaseClient; token: () => string | undefined; now?: () => number }
 const WINDOW = 10 * 60_000
 const dateFormat = new Intl.DateTimeFormat('sv-SE', {
   timeZone: 'America/Mexico_City', year: 'numeric', month: '2-digit', day: '2-digit',
   hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23',
 })
 
-function cdmx(value: string | null) {
+export function cdmx(value: string | null) {
   if (!value || !Number.isFinite(Date.parse(value))) return null
   // ISO con offset calculado con IANA (incluye el horario histórico de CDMX).
   const date = new Date(value)
@@ -49,8 +49,8 @@ function integer(params: URLSearchParams, name: string, fallback: number, max: n
   return n
 }
 
-export function crearLectura({ client, token, now = Date.now }: Dependencies) {
-  // Un único token por CRM; memoria acotada. Compartido por las dos rutas en esta instancia.
+export function crearLectura({ client, token, resumen, now = Date.now }: Dependencies) {
+  // Un único token por CRM; memoria acotada. Compartido por las tres rutas en esta instancia.
   let windowStart = 0, requests = 0, tokenHash = ''
   function json(body: unknown, status = 200, extra: Record<string, string> = {}) {
     return Response.json(body, { status, headers: {
@@ -58,7 +58,7 @@ export function crearLectura({ client, token, now = Date.now }: Dependencies) {
       'X-Content-Type-Options': 'nosniff', ...extra,
     } })
   }
-  return async function lectura(req: Request, detalle: boolean) {
+  return async function lectura(req: Request, detalle: boolean | 'resumen') {
     if (req.method !== 'GET') return json({ error: 'Solo GET' }, 405, { Allow: 'GET' })
     const expected = token()
     if (!expected) return json({ error: 'Lectura no configurada' }, 503)
@@ -76,6 +76,15 @@ export function crearLectura({ client, token, now = Date.now }: Dependencies) {
       'Retry-After': String(Math.max(1, Math.ceil((windowStart + WINDOW - current) / 1000))),
     })
     requests++
+    if (detalle === 'resumen') {
+      try {
+        if (!resumen) throw new Error('configuracion')
+        return await resumen(req, client, current)
+      } catch {
+        console.warn('[lectura] resumen fallido')
+        return json({ error: 'No se pudo consultar el resumen' }, 500)
+      }
+    }
     let horas = 24, limite = detalle ? 500 : 200, whatsapp = ''
     try {
       const params = new URL(req.url).searchParams
