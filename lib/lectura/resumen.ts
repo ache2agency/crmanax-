@@ -14,6 +14,7 @@ type Mensaje = { id: string; conversacion_id: string; rol: string; contenido: st
   plantilla?: string; plantilla_motor?: string; envio_estado?: string }
 type Actividad = { lead_id: string; event_type: string; created_at: string; destino?: string; lead: Lead }
 export type DatosResumen = { conversaciones: Conversacion[]; mensajes: Mensaje[]; nuevos: Lead[]; actividades: Actividad[] }
+const ORDEN_REGLAS = ['a','b','d','c','f','g']
 const HORA = 3600_000
 const normal = (s?: string | null) => (s || '').normalize('NFD').replace(/\p{M}/gu, '').toLowerCase()
 const numero = (s = '') => s.replace(/\D/g, '')
@@ -42,7 +43,7 @@ export function proximoInicio(calendario: string | undefined, now: number) {
   return fechas.filter(f => f >= dia(now) && f <= dia(now + 48 * HORA)).sort()[0] ?? null
 }
 
-export function calcularResumen(datos: DatosResumen, config: ConfigResumen, now: number, horas: number, parcial: string[] = []) {
+export function calcularResumen(datos: DatosResumen, config: ConfigResumen, now: number, horas: number, parcial: string[] = [], filasFaltantes: Record<string, number> = {}) {
   const hoy = dia(now), ayer = dia(now - 24 * HORA), desde = now - horas * HORA
   const interno = (whatsapp: string) => config.internos.includes(numero(whatsapp))
   const elegibles = datos.conversaciones.filter(c => c.fase !== 'nota' && !interno(c.whatsapp))
@@ -55,6 +56,12 @@ export function calcularResumen(datos: DatosResumen, config: ConfigResumen, now:
   }
   for (const rows of porChat.values()) rows.sort((a,b) => fecha(a.created_at)-fecha(b.created_at) || a.id.localeCompare(b.id))
   const actividades = datos.actividades.filter(a => a.lead && leadValido(a.lead) && fecha(a.created_at) <= now)
+  const actividadesPorLead = new Map<string, Actividad[]>()
+  for (const a of actividades) {
+    const grupo = actividadesPorLead.get(a.lead_id) || []
+    grupo.push(a); actividadesPorLead.set(a.lead_id, grupo)
+  }
+  const diplomados = new Map<string, Set<string>>()
   const atenciones = []
   const porFase: Record<string, number> = {}, porEtapa: Record<string, number> = {}
   let abiertas = 0, humanos = 0, enPeriodo = 0
@@ -81,6 +88,11 @@ export function calcularResumen(datos: DatosResumen, config: ConfigResumen, now:
     const agregar = (regla: string, motivo: string, accion_sugerida: string) => razones.push({ regla, motivo, accion_sugerida })
     const esAutomatico = usuarios.some(m => fecha(m.created_at) >= desde && !/[¿?]/.test(m.contenido) && !/^(cual|que|como|me (puedes|podrias))\b/.test(normal(m.contenido)) && automatico.test(normal(m.contenido)))
     const terminal = config.finales.includes(c.fase) || config.finales.includes(c.lead?.stage || '')
+    if (inicio && !esAutomatico && !terminal && /diplom/.test(normal(c.lead?.curso)) && !/individual/.test(normal(c.lead?.curso))) {
+      const programa = limpio(c.lead?.curso) || 'Diplomado sin identificar'
+      const grupo = diplomados.get(programa) || new Set<string>()
+      grupo.add(c.lead?.id || numero(c.whatsapp)); diplomados.set(programa, grupo)
+    }
     const intenciones = usuarios.filter(m => intencion.test(normal(m.contenido)) && !/\bno\s+(quiero|deseo|me interesa|voy a)\b/.test(normal(m.contenido)))
     const caliente = !terminal && (intenciones.length > 0 || config.calientes.includes(c.fase) || config.calientes.includes(c.lead?.stage || ''))
     if (esAutomatico) agregar('g', 'Posible mensaje automático de negocio; no es lead, sacar de seguimiento', 'Verificar que sea un negocio y retirar del seguimiento manualmente')
@@ -90,7 +102,7 @@ export function calcularResumen(datos: DatosResumen, config: ConfigResumen, now:
       const sinRespuesta = ultimo && !respuestas.length
       if (sinRespuesta && now - ultimaFecha > 15 * 60_000 && ultimaFecha >= desde) agregar('a', 'Último mensaje del lead sin respuesta por más de 15 minutos', 'Responder la pregunta pendiente desde el CRM')
       if (c.modo_humano && ultimo && ultimaFecha >= desde && !respuestas.some(m => m.rol === 'agente')) agregar('b', 'Modo humano sin respuesta de agente al último mensaje del lead', 'El asesor debe responder desde el CRM')
-      const progreso = actividades.filter(a => a.lead_id === c.lead?.id && (a.event_type === 'stage_changed' || /inscripcion|reserva|documentos|ruta_paso/.test(a.event_type)))
+      const progreso = (actividadesPorLead.get(c.lead?.id || '') || []).filter(a => (a.event_type === 'stage_changed' || /inscripcion|reserva|documentos|ruta_paso/.test(a.event_type)))
       const ultimoAvance = Math.max(fecha(c.lead?.paso_desde) || 0, ...progreso.map(a => fecha(a.created_at)))
       const interesDesde = intenciones.length ? fecha(intenciones.at(-1)?.created_at) : fecha(c.lead?.created_at)
       if (caliente && Number.isFinite(interesDesde) && now - Math.max(interesDesde, ultimoAvance) >= 24 * HORA) agregar('c', 'Quiere inscribirse/reservar y no hay avance registrado en 24 horas', 'Confirmar el siguiente paso con el lead y registrar el avance')
@@ -107,17 +119,16 @@ export function calcularResumen(datos: DatosResumen, config: ConfigResumen, now:
         }
       }
       if (faltantes.size) agregar('d', `Posible dato no respondido por el bot: ${[...faltantes].join(', ')}`, 'Revisar el historial y contestar con el dato confirmado')
-      if (inicio && !terminal && /diplom/.test(normal(c.lead?.curso)) && !/individual/.test(normal(c.lead?.curso))) agregar('e', `Su diplomado grupal inicia el ${inicio} (en 2 días o menos)`, 'Confirmar grupo y ayudar a completar la inscripción')
       if (caliente && ventana && now - ultimaFecha > 21 * HORA) agregar('f', 'La ventana de 24 horas de un lead caliente cierra en menos de 3 horas', 'Atender antes del cierre de la ventana')
     }
-    const ordenReglas = ['f','e','b','a','c','d','g']
-    razones.sort((a,b) => ordenReglas.indexOf(a.regla)-ordenReglas.indexOf(b.regla))
+    razones.sort((a,b) => ORDEN_REGLAS.indexOf(a.regla)-ORDEN_REGLAS.indexOf(b.regla))
     if (razones.length) atenciones.push({ whatsapp: /^\+?[1-9]\d{7,14}$/.test(c.whatsapp) ? '+' + numero(c.whatsapp) : '[número inválido]',
       nombre: limpio(c.lead?.nombre), programa_loft: limpio(c.lead?.curso || c.lead?.loft_id),
       fase: config.etiquetas[c.fase] || 'Otra fase', razones,
-      prioridad: esAutomatico ? 3 : razones.some(r => r.regla === 'f' || r.regla === 'e') ? 0 : razones.some(r => r.regla === 'b' || r.regla === 'a') ? 1 : 2 })
+      ultimo_mensaje_at: cdmx(c.ultimo_mensaje_at),
+      prioridad: ORDEN_REGLAS.indexOf(razones[0].regla), actividad: fecha(c.ultimo_mensaje_at) || 0 })
   }
-  atenciones.sort((a,b) => a.prioridad-b.prioridad || a.whatsapp.localeCompare(b.whatsapp))
+  atenciones.sort((a,b) => a.prioridad-b.prioridad || b.actividad-a.actividad || a.whatsapp.localeCompare(b.whatsapp))
   const eventosAyer = actividades.filter(a => dia(fecha(a.created_at)) === ayer)
   const logros = new Set(eventosAyer.filter(a => a.event_type === 'stage_changed' && config.logros.includes(a.destino || '')).map(a => a.lead_id))
   // Windsor guarda la fecha exacta del paso 17 aunque no exista actividad de cambio de etapa.
@@ -128,10 +139,12 @@ export function calcularResumen(datos: DatosResumen, config: ConfigResumen, now:
   return { crm: config.crm, generado_at: cdmx(new Date(now).toISOString()), zona_horaria: 'America/Mexico_City', horas,
     totales: { ventana_24h: abiertas, conversaciones_en_periodo: enPeriodo, modo_humano: humanos,
       leads_nuevos_hoy: datos.nuevos.filter(l => leadValido(l) && dia(fecha(l.created_at)) === hoy).length,
+      ...(inicio ? { diplomados_inicio_proximo: { fecha: inicio, sin_inscribir: new Set([...diplomados.values()].flatMap(g => [...g])).size,
+        por_diplomado: Object.fromEntries([...diplomados].sort(([a],[b]) => a.localeCompare(b)).map(([p,g]) => [p,g.size])) } } : {}),
       leads_nuevos_ayer: datos.nuevos.filter(l => leadValido(l) && dia(fecha(l.created_at)) === ayer).length },
-    por_fase: porFase, ...(config.etapas ? { por_etapa: porEtapa } : {}), requieren_atencion: atenciones,
+    por_fase: porFase, ...(config.etapas ? { por_etapa: porEtapa } : {}), requieren_atencion: atenciones.map(({ actividad, ...caso }) => caso),
     ayer: { fecha: ayer, [config.crm === 'Windsor' ? 'inscritos' : 'reservas']: logros.size, archivados: archivados.size, plantillas_enviadas_detectadas: plantillas },
-    parcial: parcial.length > 0, limites_alcanzados: parcial,
+    parcial: parcial.length > 0, limites_alcanzados: parcial, filas_faltantes: filasFaltantes,
     advertencias: ['Fases: solo conversaciones con ventana de 24 h abierta. Modo humano: todas las conversaciones consultadas.',
       'Atención: indicios por reglas fijas; confirmar en el CRM. Sin avance: historial de hasta 7 días y fecha del paso cuando existe.',
       'Ayer: logros y archivos con evidencia de transición; no deducidos de la etapa actual. Reservas son cambios a Reservado, no cobros ni ocupación.',
@@ -147,10 +160,14 @@ export function resumenTexto(r: ReturnType<typeof calcularResumen>) {
     `Ayer: ${'inscritos' in r.ayer ? r.ayer.inscritos : r.ayer.reservas} ${r.crm === 'Windsor' ? 'inscritos' : 'reservas'} · ${r.ayer.archivados} archivados · ≥${r.ayer.plantillas_enviadas_detectadas} plantillas detectadas`,
     `Requieren atención (${r.requieren_atencion.length}; indicios, revisar CRM):`]
   if (r.por_etapa) lines.splice(4,0,'Etapas: ' + Object.entries(r.por_etapa).map(([k,v]) => `${k} ${v}`).join(' · '))
-  const top = r.requieren_atencion.slice(0,20)
+  if (t.diplomados_inicio_proximo) {
+    const d = t.diplomados_inicio_proximo
+    lines.splice(3,0,`Diplomados con inicio el ${d.fecha} sin inscribir: ${d.sin_inscribir} (por diplomado: ${Object.entries(d.por_diplomado).map(([p,n]) => `${p} ${n}`).join(', ') || 'ninguno'})`)
+  }
+  const top = r.requieren_atencion.slice(0,25)
   for (const c of top) lines.push(`${c.whatsapp} · ${c.nombre || 'Sin nombre'} · ${c.programa_loft || 'Sin programa/loft'} · ${c.razones[0].motivo}${c.razones.length > 1 ? ` (+${c.razones.length-1} motivos en JSON)` : ''} → ${c.razones[0].accion_sugerida}`)
   if (top.length < r.requieren_atencion.length) lines.push(`+${r.requieren_atencion.length-top.length} casos más en formato JSON.`)
-  if (r.parcial) lines.push(`PARCIAL: límite en ${r.limites_alcanzados.join(', ')}; los conteos pueden ser menores a los reales.`)
+  if (r.parcial) lines.push(`PARCIAL: ${Object.entries(r.filas_faltantes).map(([tabla,n]) => `${tabla}: faltaron ${n} filas`).join('; ')}; conteos incompletos.`)
   lines.push('Ayer cuenta solo transiciones registradas; plantillas es un mínimo detectable.', 'Solo lectura · sin IA · fechas CDMX')
   return lines.join('\n') + '\n'
 }
@@ -163,39 +180,47 @@ export function crearResumen(config: ConfigResumen) {
       || (p.has('formato') && !['json','texto'].includes(p.get('formato')!))) return json({ error: 'Parámetros inválidos: horas 1–168, formato json|texto' },400)
     const horas = Number(p.get('horas') || 24)
     const controller = new AbortController()
-    const timeout = setTimeout(() => controller.abort(), 2500)
+    const timeout = setTimeout(() => controller.abort(), 4000)
     try {
-      const db = client(), parcial: string[] = []
+      const inicioConsulta = Date.now()
+      const db = client(), parcial: string[] = [], filasFaltantes: Record<string, number> = {}
       const desdeAyer = dia(now - 24 * HORA) + 'T00:00:00-06:00'
       const desde = new Date(now - 168 * HORA).toISOString()
       // Páginas <=1000 para respetar max_rows de PostgREST. Un único presupuesto global.
       async function leer<T>(tabla: string, columnas: string, limite: number, filtro: (q: ReturnType<ReturnType<SupabaseClient['from']>['select']>) => ReturnType<ReturnType<SupabaseClient['from']>['select']>, ordenar = 'created_at') {
         const rows: T[] = []
+        let total = 0
         while (rows.length < limite) {
           const size = Math.min(1000, limite - rows.length)
-          const q = filtro(db.from(tabla).select(columnas)).order(ordenar, { ascending: false }).order('id', { ascending: false })
+          const q = filtro(db.from(tabla).select(columnas, rows.length === 0 ? { count: 'exact' } : {})).order(ordenar, { ascending: false }).order('id', { ascending: false })
           const result = await q.range(rows.length, rows.length+size-1).abortSignal(controller.signal)
           if (result.error) throw new Error('consulta')
+          if (rows.length === 0) {
+            if (result.count === null) throw new Error('conteo ausente')
+            total = result.count
+          }
           rows.push(...(result.data as unknown as T[]))
-          if (result.data.length < size) return rows
+          if (rows.length >= total) return rows
+          if (!result.data.length) throw new Error('página incompleta')
         }
-        parcial.push(tabla); return rows
+        parcial.push(tabla); filasFaltantes[tabla] = total - rows.length; return rows
       }
       const [conversaciones, mensajes, nuevos, actividades] = await Promise.all([
-        leer<Conversacion>('whatsapp_conversaciones', `id,whatsapp,fase,modo_humano,ultimo_mensaje_at,lead:leads(${config.leadSelect})`, 500,
+        leer<Conversacion>('whatsapp_conversaciones', `id,whatsapp,fase,modo_humano,ultimo_mensaje_at,lead:leads(${config.leadSelect})`, 10000,
           q => {
             const base = q.or('fase.is.null,fase.neq.nota')
             const internos = config.internos.flatMap(n => [n, '+'+n])
             return internos.length ? base.not('whatsapp','in','('+internos.join(',')+')') : base
           }, 'ultimo_mensaje_at'),
-        leer<Mensaje>('whatsapp_mensajes', 'id,conversacion_id,rol,contenido,created_at,plantilla:raw_payload->>template,plantilla_motor:raw_payload->seguimiento_motor->>templateName,envio_estado:raw_payload->>status', 5000,
+        leer<Mensaje>('whatsapp_mensajes', 'id,conversacion_id,rol,contenido,created_at,plantilla:raw_payload->>template,plantilla_motor:raw_payload->seguimiento_motor->>templateName,envio_estado:raw_payload->>status', 50000,
           q => q.gte('created_at',desde).lte('created_at',new Date(now).toISOString())),
-        leer<Lead>('leads','id,whatsapp,created_at,conversaciones:whatsapp_conversaciones(fase)',1000,
+        leer<Lead>('leads','id,whatsapp,created_at,conversaciones:whatsapp_conversaciones(fase)',10000,
           q => q.gte('created_at',desdeAyer).lte('created_at',new Date(now).toISOString())),
-        leer<Actividad>('lead_activities','lead_id,event_type,created_at,destino:meta->>to,lead:leads!inner(whatsapp,conversaciones:whatsapp_conversaciones(fase))',2000,
+        leer<Actividad>('lead_activities','lead_id,event_type,created_at,destino:meta->>to,lead:leads!inner(whatsapp,conversaciones:whatsapp_conversaciones(fase))',20000,
           q => q.gte('created_at',desde).lte('created_at',new Date(now).toISOString())),
       ])
-      const resumen = calcularResumen({ conversaciones, mensajes, nuevos, actividades },config,now,horas,parcial)
+      const resumen = calcularResumen({ conversaciones, mensajes, nuevos, actividades },config,now,horas,parcial,filasFaltantes)
+      if (controller.signal.aborted || Date.now() - inicioConsulta >= 4000) { controller.abort(); throw new Error('tiempo') }
       return p.get('formato') === 'texto' ? new Response(resumenTexto(resumen), { headers: { ...headers, 'Content-Type':'text/plain; charset=utf-8' } }) : json(resumen)
     } catch {
       // No registrar errores del proveedor, texto, números ni credenciales.

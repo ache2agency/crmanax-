@@ -69,9 +69,10 @@ for(const [tema,pregunta,respuesta] of [['precio','¿Cuál es el costo?','El cos
 })
 test('e: calendario oficial próximo ≤2 días, nunca individual ni terminal',()=>{
   const d=empty(), c=chat(d,{curso:'Diplomado ficticio'})
-  const r=calc(d);assert.equal(reglas(r).includes('e'),isWindsor)
+  const r=calc(d);assert.ok(!reglas(r).includes('e'));assert.equal(r.totales.diplomados_inicio_proximo?.sin_inscribir,isWindsor?1:undefined)
   assert.equal(proximoInicio('11 de noviembre de 2026; 20 de enero de 2027',now),'2026-11-11')
-  c.lead.curso+=' individual';assert.ok(!reglas(calc(d)).includes('e'))
+  c.lead.curso+=' individual';assert.equal(calc(d).totales.diplomados_inicio_proximo?.sin_inscribir || 0,0)
+  c.lead.curso='Diplomado ficticio';c.lead.stage=config.logros[0];assert.equal(calc(d).totales.diplomados_inicio_proximo?.sin_inscribir || 0,0)
   assert.equal(proximoInicio('20 de enero de 2027',now),null)
   assert.equal(proximoInicio('8 de noviembre de 2026',now),null)
 })
@@ -121,7 +122,7 @@ test('salida solo campos autorizados, texto sensible/enlaces/control filtrados; 
   assert.ok(!('mensajes' in r));assert.match(resumenTexto(r),/Solo lectura/)
 })
 
-function setup({datos=empty(),token='ficticio',errorTable,delay=0,cap}={}) {
+function setup({datos=empty(),token='ficticio',errorTable,delay=0,cap,serverPage=1000}={}) {
   let clients=0
   const calls=[]
   const db=createClient('https://resumen.invalid','ficticio',{auth:{persistSession:false,autoRefreshToken:false},global:{fetch:async(input,init)=>{
@@ -138,13 +139,13 @@ function setup({datos=empty(),token='ficticio',errorTable,delay=0,cap}={}) {
     }
     assert.equal(u.searchParams.get('select'),selects[table])
     let rows={whatsapp_conversaciones:datos.conversaciones,whatsapp_mensajes:datos.mensajes,leads:datos.nuevos,lead_activities:datos.actividades}[table]
-    if(cap&&table==='whatsapp_mensajes') rows=Array.from({length:5001},(_,i)=>({id:String(i),conversacion_id:'c1',rol:'bot',contenido:'Hola',created_at:iso(1)}))
+    if(cap&&table==='whatsapp_mensajes') rows=Array.from({length:cap},(_,i)=>({id:String(i),conversacion_id:'c1',rol:'bot',contenido:'Hola',created_at:iso(1)}))
     for(const [k,v] of u.searchParams) {
       if(v.startsWith('gte.'))rows=rows.filter(x=>x[k]>=v.slice(4))
       if(v.startsWith('lte.'))rows=rows.filter(x=>x[k]<=v.slice(4))
     }
     const offset=Number(u.searchParams.get('offset')||0),limit=Number(u.searchParams.get('limit'))
-    assert.ok(limit<=1000);return Response.json(rows.slice(offset,offset+limit))
+    assert.ok(limit<=1000);return Response.json(rows.slice(offset,offset+Math.min(limit,serverPage)),{headers:{'content-range':`${offset}-${Math.min(offset+limit,rows.length)-1}/${rows.length}`}})
   }}})
   const lectura=crearLectura({client(){clients++;return db},token:()=>token,now:()=>now,resumen:crearResumen(config)})
   const call=(query='',auth='Bearer ficticio',method='GET',tipo='resumen')=>lectura(new Request('https://local.invalid/api/lectura/resumen'+query,{method,headers:auth?{Authorization:auth}:{}}),tipo)
@@ -169,16 +170,30 @@ test('endpoint SELECT real con fetch falso: JSON/texto, headers, ventana, tiempo
   assert.equal(s.calls.length,8)
   assert.deepEqual(s.calls.find(x=>x.table==='whatsapp_mensajes').params.getAll('created_at'),['gte.2026-11-03T15:45:00.000Z','lte.2026-11-10T15:45:00.000Z']) // filtros gte/lte repiten columna
 })
-test('cap 5000 mensajes, páginas <=1000, parcial visible en JSON/texto; cálculo acotado <3s',async()=>{
-  const d=empty();chat(d);const s=setup({datos:d,cap:true}),start=performance.now()
-  const b=await(await s.call()).json();assert.equal(b.parcial,true);assert.ok(b.limites_alcanzados.includes('whatsapp_mensajes'))
-  assert.equal(s.calls.filter(x=>x.table==='whatsapp_mensajes').length,5)
-  assert.ok(performance.now()-start<3000)
-  assert.match(await(await setup({datos:d,cap:true}).call('?formato=texto')).text(),/PARCIAL/)
+test('paginación supera topes anteriores: conteos completos y páginas servidor de 400',async()=>{
+  const d=empty()
+  for(let i=0;i<1200;i++) { const id='c'+i;chat(d,{id});msg(d,'usuario','Hola',1,id);d.nuevos.push({id,created_at:iso(1)}) }
+  const completo=await(await setup({datos:d,serverPage:400}).call()).json()
+  assert.equal(completo.totales.ventana_24h,1200);assert.equal(completo.parcial,false)
+  const s=setup({datos:d,cap:6000,serverPage:400}),start=performance.now()
+  const b=await(await s.call()).json();assert.equal(b.parcial,false);assert.equal(b.totales.leads_nuevos_hoy,1200)
+  assert.equal(s.calls.filter(x=>x.table==='whatsapp_conversaciones').length,3)
+  assert.equal(s.calls.filter(x=>x.table==='whatsapp_mensajes').length,15)
+  assert.ok(performance.now()-start<5000)
+  assert.ok(!(await(await s.call('?formato=texto')).text()).includes('PARCIAL'))
 })
-test('fallo remoto genérico sin datos internos; deadline aborta <3s',async()=>{
+test('tope exacto no es parcial; desborde informa cuántas filas faltaron',async()=>{
+  const d=empty();chat(d);const start=performance.now()
+  const exact=await(await setup({datos:d,cap:50000}).call()).json();assert.equal(exact.parcial,false)
+  const s=setup({datos:d,cap:50007})
+  const b=await(await s.call()).json();assert.equal(b.parcial,true);assert.equal(b.filas_faltantes.whatsapp_mensajes,7)
+  assert.equal(s.calls.filter(x=>x.table==='whatsapp_mensajes').length,50)
+  assert.ok(performance.now()-start<5000)
+  assert.match(await(await setup({datos:d,cap:50007}).call('?formato=texto')).text(),/whatsapp_mensajes: faltaron 7 filas/)
+})
+test('fallo remoto genérico sin datos internos; deadline aborta <5s',async()=>{
   const r=await setup({errorTable:'leads'}).call();assert.equal(r.status,500);assert.ok(!(await r.text()).includes('credencial-proveedor'))
-  const start=performance.now(),r2=await setup({delay:4000}).call();assert.equal(r2.status,504);assert.ok(performance.now()-start<3000)
+  const start=performance.now(),r2=await setup({delay:6000}).call();assert.equal(r2.status,504);assert.ok(performance.now()-start<5000)
 })
 test('ruta real usa singleton y rechaza HEAD/OPTIONS',async()=>{
   let seen
@@ -199,4 +214,56 @@ test('campos nulos de lead y conversación sin lead no rompen el resumen',()=>{
   const d=empty(), c=chat(d);c.lead.curso=null;c.lead.loft_id=null;c.lead.nombre=null
   msg(d,'usuario','Hola');assert.equal(calc(d).totales.ventana_24h,1)
   c.lead=null;assert.equal(calc(d).requieren_atencion[0].nombre,null)
+})
+
+test('120 diplomados próximos + a/b/d: agregado único y urgencias primero, también vía endpoint',async()=>{
+  const d=empty()
+  for(let i=0;i<120;i++) {
+    const id='e'+i;chat(d,{id,curso:'Diplomado '+(i<80?'Restaurantes':'Terapia'),telefono:'+525500'+String(i).padStart(6,'0')})
+    msg(d,'usuario','Hola',1,id);msg(d,'bot','Hola',.9,id)
+  }
+  chat(d,{id:'a',telefono:'+525599000001'});msg(d,'usuario','Hola',1,'a')
+  chat(d,{id:'b',humano:true,telefono:'+525599000002'});msg(d,'usuario','Hola',.5,'b');msg(d,'bot','Hola',.4,'b')
+  chat(d,{id:'d',telefono:'+525599000003'});msg(d,'usuario','¿Cuál es el costo?',.2,'d');msg(d,'bot','¿Cómo te llamas?',.1,'d')
+  const s=setup({datos:d}),r=await(await s.call()).json(),text=await(await s.call('?formato=texto')).text()
+  assert.equal(r.parcial,false);assert.equal(r.totales.ventana_24h,123)
+  assert.deepEqual(r.requieren_atencion.map(c=>c.razones[0].regla),['a','b','d'])
+  assert.ok(!reglas(r).includes('e'))
+  if(isWindsor) {
+    assert.equal(r.totales.diplomados_inicio_proximo.sin_inscribir,120)
+    assert.deepEqual(r.totales.diplomados_inicio_proximo.por_diplomado,{'Diplomado Restaurantes':80,'Diplomado Terapia':40})
+    assert.equal(text.split('Diplomados con inicio').length-1,1)
+    assert.match(text,/2026-11-11 sin inscribir: 120/)
+  }
+  assert.ok(text.indexOf('+525599000001')<text.indexOf('+525599000002'))
+  assert.ok(text.indexOf('+525599000002')<text.indexOf('+525599000003'))
+})
+test('orden a/b/d/c/f/g y actividad reciente dentro de regla; máximo 25, resto JSON',()=>{
+  const d=empty()
+  for(let i=0;i<27;i++) {
+    const id='a'+i,c=chat(d,{id,telefono:'+525500'+String(i).padStart(6,'0')})
+    c.ultimo_mensaje_at=iso(2-i*.01);msg(d,'usuario','Hola',2-i*.01,id)
+  }
+  chat(d,{id:'b',humano:true});msg(d,'usuario','Hola',1,'b');msg(d,'bot','Hola',.9,'b')
+  chat(d,{id:'d'});msg(d,'usuario','Precio',1,'d');msg(d,'bot','Tu nombre',.9,'d')
+  chat(d,{id:'c'});msg(d,'usuario','Quiero reservar',25,'c')
+  chat(d,{id:'f'});msg(d,'usuario','Quiero reservar',22,'f');msg(d,'bot','Listo',1,'f')
+  chat(d,{id:'g'});msg(d,'usuario','Mensaje automático',.1,'g')
+  const r=calc(d),text=resumenTexto(r)
+  assert.deepEqual(r.requieren_atencion.slice(27).map(c=>c.razones[0].regla),['b','d','c','f','g'])
+  assert.equal(r.requieren_atencion[0].whatsapp,'+525500000026')
+  assert.equal(text.split('→').length-1,25);assert.match(text,/\+7 casos más/)
+})
+
+test('actividades >2000 completas; diplomado con urgencia conserva caso y deduplica total',async()=>{
+  const d=empty(),c=chat(d,{curso:'Diplomado Restaurantes'})
+  msg(d,'usuario','Hola',1)
+  for(let i=0;i<2200;i++) d.actividades.push({lead_id:'l'+i,event_type:'stage_changed',destino:config.logros[0],created_at:iso(20),lead:{whatsapp:'+525500000000'}})
+  const r=await(await setup({datos:d}).call()).json()
+  assert.equal(r.ayer[isWindsor?'inscritos':'reservas'],2200);assert.equal(r.parcial,false)
+  assert.equal(r.requieren_atencion[0].razones[0].regla,'a')
+  if(isWindsor) {
+    const copia={...c,id:'duplicado'};d.conversaciones.push(copia)
+    assert.equal(calc(d).totales.diplomados_inicio_proximo.sin_inscribir,1)
+  }
 })
