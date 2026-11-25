@@ -1,11 +1,14 @@
+import { createHash } from 'node:crypto'
 import { respuestaPrimerContacto } from '@/lib/whatsapp/iniciar'
-import { TEXTOS, textoAprobado, condicionesEstancia } from '@/lib/anaxagoras/textos'
+import { TEXTOS, textoAprobado, condicionesEstancia, FOTOS_ROOFTOP, GALERIA_ROOFTOP } from '@/lib/anaxagoras/textos'
 import { detectarFaqAprobada, esPreguntaHorarioEntrada } from '@/lib/anaxagoras/faq'
 import { createServiceRoleClient } from '@/utils/supabase/server'
 import {
   getMetaConfig,
   normalizePhoneNumber,
+  sendMetaWhatsAppImage,
   sendMetaWhatsAppMessage,
+  sendTwilioWhatsAppMessage,
 } from '@/lib/whatsapp/provider'
 import { enviarPushATodos } from '@/lib/push'
 import { after } from 'next/server'
@@ -258,6 +261,7 @@ type IncomingWhatsAppMessage = {
   waNumber: string
   profileName: string
   rawPayload: Record<string, unknown>
+  messageId: string | null
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -455,7 +459,7 @@ function parseIncoming(payload: unknown): IncomingWhatsAppMessage | null {
     const body = ((message.text as Record<string, unknown>)?.body as string) || ''
     if (!body) return null
 
-    return { body, from, waNumber: from, profileName, rawPayload: p }
+    return { body, from, waNumber: from, profileName, rawPayload: p, messageId: typeof message.id === 'string' ? message.id : null }
   } catch {
     return null
   }
@@ -619,6 +623,75 @@ const MSG = {
 }
 
 // ─── FAQ detector ─────────────────────────────────────────────────────────────
+
+const INTRO_FOTOS_ROOFTOP = 'Así es el Roof Top 👇'
+const SOLICITUD_FOTOS = /\b(?:fotos?|fotograf[ií]as?|imagen|im[aá]genes|galer[ií]a)\b/i
+const CONTEXTO_EVENTO = /\b(?:roof(?:[\s-]*top)?|terraza|eventos?|fiestas?)\b/i
+const CONTEXTO_LOFT = /\b(?:lofts?|departamentos?|[aá]reas? comunes|lavander[ií]a)\b/i
+
+function pideFotosRoofTop(text: string, ultimoBot: string | null | undefined) {
+  if (!SOLICITUD_FOTOS.test(text) || CONTEXTO_LOFT.test(text)) return false
+  return CONTEXTO_EVENTO.test(text) ||
+    (ultimoBot?.startsWith('*Roof Top Anaxágoras* — Eventos') &&
+      !detectarFaqAprobada(text))
+}
+
+function idRespuestaFotosRoofTop(messageId: string) {
+  const hash = createHash('sha256').update('fotos-rooftop:' + messageId).digest('hex')
+  return [hash.slice(0, 8), hash.slice(8, 12), hash.slice(12, 16), hash.slice(16, 20), hash.slice(20, 32)].join('-')
+}
+
+async function enviarFotosRoofTop(
+  supabase: ReturnType<typeof createServiceRoleClient>,
+  convId: string,
+  to: string,
+  respuestaId: string | null,
+) {
+  const entrada = { conversacion_id: convId, rol: 'bot' }
+  // La PK reserva el lote antes de enviar, incluso entre instancias distintas.
+  const { error } = await supabase.from('whatsapp_mensajes').insert([{
+    ...entrada,
+    ...(respuestaId ? { id: respuestaId } : {}),
+    contenido: INTRO_FOTOS_ROOFTOP,
+    raw_payload: {},
+  }])
+  if (respuestaId && error?.code === '23505') return
+  if (error) throw error
+
+  const usaTwilio = process.env.WHATSAPP_PROVIDER === 'twilio'
+  const enviarTexto = usaTwilio ? sendTwilioWhatsAppMessage : sendMetaWhatsAppMessage
+  await enviarTexto({ to, body: INTRO_FOTOS_ROOFTOP })
+
+  let enviarGaleria = usaTwilio
+  if (!usaTwilio) {
+    for (const link of FOTOS_ROOFTOP) {
+      let imagen
+      try {
+        imagen = await sendMetaWhatsAppImage({ to, link })
+      } catch (error) {
+        console.error('[webhook] error enviando foto del Roof Top:', error)
+        enviarGaleria = true
+        continue
+      }
+      const { error: errorRegistro } = await supabase.from('whatsapp_mensajes').insert([{
+        ...entrada,
+        contenido: link,
+        raw_payload: { type: 'image', meta_message_id: imagen.id },
+      }])
+      if (errorRegistro) console.error('[webhook] error registrando foto del Roof Top:', errorRegistro)
+    }
+  }
+
+  if (enviarGaleria) {
+    await enviarTexto({ to, body: GALERIA_ROOFTOP })
+    const { error: errorRegistro } = await supabase.from('whatsapp_mensajes').insert([{
+      ...entrada,
+      contenido: GALERIA_ROOFTOP,
+      raw_payload: {},
+    }])
+    if (errorRegistro) console.error('[webhook] error registrando galería del Roof Top:', errorRegistro)
+  }
+}
 
 function detectFaq(textLower: string): string | null {
   const aprobada = detectarFaqAprobada(textLower)
@@ -904,9 +977,10 @@ export async function POST(request: Request) {
     const incoming = parseIncoming(payload)
     if (!incoming) return Response.json({ ok: true, ignored: true })
 
-    const { from, body, profileName, rawPayload } = incoming
+    const { from, body, profileName, rawPayload, messageId } = incoming
     let text = body.trim()
     let textLower = text.toLowerCase()
+    const respuestaFotosId = messageId && SOLICITUD_FOTOS.test(text) ? idRespuestaFotosRoofTop(messageId) : null
 
     // Números de admin (Alexis, Harold) — solo abren su ventana de 24h para
     // recibir alertas, no son clientes: no se les crea lead ni se les contesta
@@ -962,6 +1036,15 @@ export async function POST(request: Request) {
       .maybeSingle()
 
     let contextoCierre: ContextoCierre = { fase: conv?.fase, ultimoMensajeBot: await ultimoMensajeBot(supabase, conv?.id) }
+
+    // Consultar la reserva después del historial. Si «¿fotos?» ya cambió el
+    // último mensaje del bot, su reintento tampoco debe mandar fotos de lofts.
+    if (respuestaFotosId) {
+      const { data, error } = await supabase.from('whatsapp_mensajes')
+        .select('id').eq('id', respuestaFotosId).maybeSingle()
+      if (error) throw error
+      if (data) return Response.json({ ok: true, duplicado: true })
+    }
 
     // Lead que pasó a no_interesado solo por 48 h sin contestar (conversación
     // abierta, no lo rechazó) y vuelve a escribir: regresa a su columna.
@@ -1182,9 +1265,10 @@ export async function POST(request: Request) {
     }
     contextoCierre.fase = fase
     const cerrarPorMensaje = esCierreConversacion(text, contextoCierre)
-    const faqEntrada = detectFaq(textLower)
+    const faqEntrada = pideFotosRoofTop(text, contextoCierre.ultimoMensajeBot) ? 'fotos_rooftop' : detectFaq(textLower)
+    const esFaqRoofTop = faqEntrada === 'rooftop' || faqEntrada === 'fotos_rooftop'
     const preferencia = preferenciaLoft(text)
-    if (leadId && !cerrarPorMensaje && faqEntrada !== 'rooftop') {
+    if (leadId && !cerrarPorMensaje && !esFaqRoofTop) {
       // Capturar datos explícitos aunque el mensaje también pregunte una FAQ.
       const nombreExplicito = text.match(/\b(?:me llamo|mi nombre es|soy)\s+([^,;!?¿\n]+)/i)?.[1]
       const nombreCapturado = nombreExplicito ? extraerNombre(nombreExplicito) : null
@@ -1210,7 +1294,8 @@ export async function POST(request: Request) {
     const datosFecha = extraerFechas(text, hoyISO())
     const soloHorario = esPreguntaHorarioEntrada(text) && datosFecha.fechas.length <= 1 && !datosFecha.duracion
     const duracionDocumental = faqEntrada === 'comprobante_ingresos' && !datosFecha.fechas.length
-    const traeFecha = faqEntrada !== 'rooftop' && !soloHorario && !duracionDocumental && (datosFecha.fechas.length > 0 || !!datosFecha.duracion || !!fechaExplicitaInvalida(text))
+    const traeFecha = !esFaqRoofTop && !soloHorario && !duracionDocumental && (datosFecha.fechas.length > 0 || !!datosFecha.duracion || !!fechaExplicitaInvalida(text))
+    let enviarFotos = false
     let procesoFechas = false
     // Estar esperando asesor no equivale a tener una reserva o cotización
     // aceptada. «Ya tengo tus datos» por sí solo tampoco impide cotizar un
@@ -1272,20 +1357,24 @@ export async function POST(request: Request) {
         nextFase = 'no_interesado'
         cerrarConversacion = true
       } else if (!['0', 'off', 'false'].includes((process.env.BOT_FAQ_EN_ESPERA || '').trim().toLowerCase())) {
-        const permitidas = ['ubicacion', 'requisitos', 'fotos', 'fotos_no_abren', 'precios', 'visitas', 'persona_adicional', 'mascotas', 'impuestos', 'areas_comunes', 'ubicacion_unica', 'pedir_fechas', 'entrada_salida', 'contrato_mensual', 'comprobante_ingresos', 'deposito', 'rooftop']
+        const permitidas = ['ubicacion', 'requisitos', 'fotos', 'fotos_rooftop', 'fotos_no_abren', 'precios', 'visitas', 'persona_adicional', 'mascotas', 'impuestos', 'areas_comunes', 'ubicacion_unica', 'pedir_fechas', 'entrada_salida', 'contrato_mensual', 'comprobante_ingresos', 'deposito', 'rooftop']
         const { data: agente, error } = await supabase.from('whatsapp_mensajes')
           .select('created_at').eq('conversacion_id', convId).eq('rol', 'agente')
           .order('created_at', { ascending: false }).limit(1).maybeSingle()
         if (!error && faqEntrada && permitidas.includes(faqEntrada) &&
             (!agente || Date.now() - new Date(agente.created_at).getTime() >= 12 * 3600000)) {
           const { data: lead } = leadId ? await supabase.from('leads').select('tipo_renta').eq('id', leadId).maybeSingle() : { data: null }
-          response = faqResponse(faqEntrada, lead?.tipo_renta)
-          if (faqEntrada !== 'rooftop') response += '\n\nTu asesor te confirma disponibilidad en breve.'
+          if (faqEntrada === 'fotos_rooftop') enviarFotos = true
+          else {
+            response = faqResponse(faqEntrada, lead?.tipo_renta)
+            if (!esFaqRoofTop) response += '\n\nTu asesor te confirma disponibilidad en breve.'
+          }
         }
       }
 
-    } else if (faqEntrada === 'rooftop') {
-      response = TEXTOS.rooftop
+    } else if (esFaqRoofTop) {
+      if (faqEntrada === 'fotos_rooftop') enviarFotos = true
+      else response = TEXTOS.rooftop
       nextFase = fase || 'nombre'
 
     } else if (faqEntrada && (!traeFecha || !puedeCotizarFechas) && !(fase === 'personas' && extraerPersonas(text, true) && !pareceInterrogacion(text))) {
@@ -1568,7 +1657,9 @@ export async function POST(request: Request) {
     }
 
     // ── Enviar respuesta ─────────────────────────────────────────────────────
-    if (response) {
+    if (enviarFotos && convId) {
+      await enviarFotosRoofTop(supabase, convId, from, respuestaFotosId)
+    } else if (response) {
       await sendMetaWhatsAppMessage({ to: from, body: response })
     }
 

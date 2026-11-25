@@ -90,12 +90,13 @@ async function metaPostWithRetry(phoneNumberId: string, accessToken: string, toN
   return res
 }
 
-export async function sendMetaWhatsAppMessage({
+async function sendMetaWhatsAppContent({
   to,
-  body,
+  content,
 }: {
   to: string
-  body: string
+  content: { type: 'text'; text: { body: string } } |
+    { type: 'image'; image: { link: string; caption?: string } }
 }) {
   const { accessToken, phoneNumberId } = getMetaConfig()
 
@@ -106,13 +107,10 @@ export async function sendMetaWhatsAppMessage({
   }
 
   const toNormalized = normalizePhoneNumber(to)
-  const toFormatted = toNormalized.replace(/^\+/, '')
-
   const response = await metaPostWithRetry(phoneNumberId, accessToken, toNormalized, {
     messaging_product: 'whatsapp',
     recipient_type: 'individual',
-    type: 'text',
-    text: { body },
+    ...content,
   })
 
   const data = await response.json().catch(() => null)
@@ -142,4 +140,28 @@ export async function sendMetaWhatsAppMessage({
         : null,
     raw: data,
   }
+}
+export function sendMetaWhatsAppMessage({ to, body }: { to: string; body: string }) {
+  return sendMetaWhatsAppContent({ to, content: { type: 'text', text: { body } } })
+}
+
+export async function sendMetaWhatsAppImage({ to, link, caption }: { to: string; link: string; caption?: string }) {
+  const result = await sendMetaWhatsAppContent({
+    to,
+    content: { type: 'image', image: { link, caption } },
+  })
+  if (!result.id) throw new Error('Meta no devolvió el ID de la imagen')
+  return result
+}
+
+export async function sendTwilioWhatsAppMessage({ to, body }: { to: string; body: string }) {
+  const { accountSid, authToken, fromNumber } = getTwilioConfig()
+  if (!accountSid || !authToken || !fromNumber) throw new Error('Faltan variables de entorno de Twilio')
+  const { default: twilio } = await import('twilio')
+  const message = await twilio(accountSid, authToken).messages.create({
+    from: fromNumber.startsWith('whatsapp:') ? fromNumber : `whatsapp:${fromNumber}`,
+    to: `whatsapp:${normalizePhoneNumber(to)}`,
+    body,
+  })
+  return { id: message.sid }
 }
