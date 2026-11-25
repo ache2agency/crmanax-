@@ -602,9 +602,6 @@ const MSG = {
   mascotas: () =>
     TEXTOS.mascotas,
 
-  rooftop: () =>
-    `*Roof Top Anaxágoras* — Eventos\n\nEspacio semitechado ideal para eventos pequeños, brunchs y reuniones.\n\n👥 Capacidad: hasta 20 personas\n⏰ Horario: 9:00 a.m. – 12:00 a.m.\n💰 Tarifa: $6,000 MXN (7 horas)\n🔒 Depósito: $2,000 MXN (se devuelve al día siguiente)\n\nIncluye: mobiliario, barra con tarja, bocina, proyector y sanitario.\n\n_No se permite equipo de audio externo ni grupos musicales._\n\nPara reservar el Roof Top escríbenos al *+52 55 3481 5126*.`,
-
   seguridad: () =>
     `*Seguridad en Anaxágoras 41:*\n\n🔐 Cerraduras inteligentes con códigos personalizados\n📹 Videovigilancia en entrada, pasillos, terraza y lavandería\n🚪 Control de acceso individual\n\nPolítica: *un acceso = una persona.* Cada huésped registra su ingreso individualmente.`,
 
@@ -635,7 +632,6 @@ function detectFaq(textLower: string): string | null {
   if (/ubica|dónde|donde|direcci|mapa|cómo llegar|como llegar/.test(textLower)) return 'ubicacion'
   if (/servicio|incluye|incluy|wifi|internet|luz|agua|gas|limpieza|lavander/.test(textLower)) return 'servicios'
   if (/estacionamiento|parking|carro|auto|coche/.test(textLower)) return 'estacionamiento'
-  if (/roof|terraza|evento|renta.*espacio|event/.test(textLower)) return 'rooftop'
   if (/segur|cámara|camara|acceso|cerradura/.test(textLower)) return 'seguridad'
   if (/no (?:me )?(?:deja |puedo )?abrir|no abre|no (?:funciona|carga).*(?:link|enlace)|(?:link|enlace).*no (?:abre|funciona|carga)/.test(textLower)) return 'fotos_no_abren'
   if (/foto|imagen|imágenes|imagenes|galer[ií]a|instalac/.test(textLower)) return 'fotos'
@@ -656,7 +652,6 @@ function faqResponse(key: string, tipoRenta?: string | null): string {
     case 'servicios': return MSG.servicios()
     case 'estacionamiento': return MSG.estacionamiento()
     case 'mascotas': return MSG.mascotas()
-    case 'rooftop': return MSG.rooftop()
     case 'seguridad': return MSG.seguridad()
     case 'visitas': return TEXTOS.visitas
     case 'fotos_no_abren': return 'Si el enlace no abre, un asesor puede ayudarte a ver las fotos directamente por WhatsApp. ¿Quieres que un asesor te apoye?'
@@ -1187,8 +1182,9 @@ export async function POST(request: Request) {
     }
     contextoCierre.fase = fase
     const cerrarPorMensaje = esCierreConversacion(text, contextoCierre)
+    const faqEntrada = detectFaq(textLower)
     const preferencia = preferenciaLoft(text)
-    if (leadId && !cerrarPorMensaje) {
+    if (leadId && !cerrarPorMensaje && faqEntrada !== 'rooftop') {
       // Capturar datos explícitos aunque el mensaje también pregunte una FAQ.
       const nombreExplicito = text.match(/\b(?:me llamo|mi nombre es|soy)\s+([^,;!?¿\n]+)/i)?.[1]
       const nombreCapturado = nombreExplicito ? extraerNombre(nombreExplicito) : null
@@ -1210,13 +1206,11 @@ export async function POST(request: Request) {
     let response = ''
     let nextFase = fase
     let cerrarConversacion = false
-    // En los pasos de fecha, un mensaje que trae fecha/duración ("del 15 al
-    // 19, ¿cuánto sale?") se procesa como fecha, no como pregunta frecuente.
+    // Las fechas y la duración de un evento no se usan para cotizar una estancia.
     const datosFecha = extraerFechas(text, hoyISO())
-    const faqEntrada = detectFaq(textLower)
     const soloHorario = esPreguntaHorarioEntrada(text) && datosFecha.fechas.length <= 1 && !datosFecha.duracion
     const duracionDocumental = faqEntrada === 'comprobante_ingresos' && !datosFecha.fechas.length
-    const traeFecha = !soloHorario && !duracionDocumental && (datosFecha.fechas.length > 0 || !!datosFecha.duracion || !!fechaExplicitaInvalida(text))
+    const traeFecha = faqEntrada !== 'rooftop' && !soloHorario && !duracionDocumental && (datosFecha.fechas.length > 0 || !!datosFecha.duracion || !!fechaExplicitaInvalida(text))
     let procesoFechas = false
     // Estar esperando asesor no equivale a tener una reserva o cotización
     // aceptada. «Ya tengo tus datos» por sí solo tampoco impide cotizar un
@@ -1278,20 +1272,24 @@ export async function POST(request: Request) {
         nextFase = 'no_interesado'
         cerrarConversacion = true
       } else if (!['0', 'off', 'false'].includes((process.env.BOT_FAQ_EN_ESPERA || '').trim().toLowerCase())) {
-        const faq = detectFaq(textLower)
-        const permitidas = ['ubicacion', 'requisitos', 'fotos', 'fotos_no_abren', 'precios', 'visitas', 'persona_adicional', 'mascotas', 'impuestos', 'areas_comunes', 'ubicacion_unica', 'pedir_fechas', 'entrada_salida', 'contrato_mensual', 'comprobante_ingresos', 'deposito']
+        const permitidas = ['ubicacion', 'requisitos', 'fotos', 'fotos_no_abren', 'precios', 'visitas', 'persona_adicional', 'mascotas', 'impuestos', 'areas_comunes', 'ubicacion_unica', 'pedir_fechas', 'entrada_salida', 'contrato_mensual', 'comprobante_ingresos', 'deposito', 'rooftop']
         const { data: agente, error } = await supabase.from('whatsapp_mensajes')
           .select('created_at').eq('conversacion_id', convId).eq('rol', 'agente')
           .order('created_at', { ascending: false }).limit(1).maybeSingle()
-        if (!error && faq && permitidas.includes(faq) &&
+        if (!error && faqEntrada && permitidas.includes(faqEntrada) &&
             (!agente || Date.now() - new Date(agente.created_at).getTime() >= 12 * 3600000)) {
           const { data: lead } = leadId ? await supabase.from('leads').select('tipo_renta').eq('id', leadId).maybeSingle() : { data: null }
-          response = faqResponse(faq, lead?.tipo_renta) + '\n\nTu asesor te confirma disponibilidad en breve.'
+          response = faqResponse(faqEntrada, lead?.tipo_renta)
+          if (faqEntrada !== 'rooftop') response += '\n\nTu asesor te confirma disponibilidad en breve.'
         }
       }
 
-    } else if (detectFaq(textLower) && (!traeFecha || !puedeCotizarFechas) && !(fase === 'personas' && extraerPersonas(text, true) && !pareceInterrogacion(text))) {
-      const faq = detectFaq(textLower)!
+    } else if (faqEntrada === 'rooftop') {
+      response = TEXTOS.rooftop
+      nextFase = fase || 'nombre'
+
+    } else if (faqEntrada && (!traeFecha || !puedeCotizarFechas) && !(fase === 'personas' && extraerPersonas(text, true) && !pareceInterrogacion(text))) {
+      const faq = faqEntrada
       let nombreCapturado: string | null = null
       if (faq === 'precios' && (!fase || ['saludo', 'nombre'].includes(fase))) {
         nombreCapturado = extraerNombre(text)
