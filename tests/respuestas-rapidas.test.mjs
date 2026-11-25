@@ -22,6 +22,14 @@ const preguntas = [
   ['¿Qué datos necesitas para cotizar?', 'pedir_fechas'],
   ['¿Qué parte de los estados de cuenta de los últimos 3 meses necesitan?', 'comprobante_ingresos'],
   ['¿Puedo entrar mañana a las 8 am?', 'entrada_salida'],
+  ['¿Cuánto cuesta rentar la terraza para una fiesta?', 'rooftop'],
+  ['¿El roof tiene elevador?', 'rooftop'],
+  ['¿Dónde se estacionan mis invitados para el evento?', 'rooftop'],
+  ['¿Puedo llevar mi bocina?', 'rooftop'],
+  ['¿Dónde está el Roof Top?', 'rooftop'],
+  ['¿Cuál es la dirección de la terraza?', 'rooftop'],
+  ['¿Puedo rentar el Roof Top el 15/11/2026 para 20 personas?', 'rooftop'],
+  ['¿Dónde están la terraza y la lavandería?', 'areas_comunes'],
 ]
 
 function caso(fase, opts = {}) {
@@ -58,13 +66,24 @@ for (const [pregunta,key] of preguntas) {
       const antes = structuredClone(s.db.leads[0])
       await s.enviar(pregunta)
       assert.equal(s.respuestas().length,1,`${fase}: ${pregunta}`)
-      assert.ok(s.respuestas()[0].body.includes(TEXTOS[key]),`${fase}: ${pregunta}`)
+      if (key === 'rooftop') assert.equal(s.respuestas()[0].body, TEXTOS.rooftop, `${fase}: ${pregunta}`)
+      else assert.ok(s.respuestas()[0].body.includes(TEXTOS[key]),`${fase}: ${pregunta}`)
       assert.equal(s.db.whatsapp_conversaciones[0].fase,fase)
       assert.deepEqual(s.db.leads[0],antes)
       assert.equal(s.enviados.length,1,'Sin alertas de asesor por resolver una pregunta factual')
     }
   })
 }
+
+test('la ficha de eventos coincide con la respuesta rápida y el estacionamiento de los lofts conserva su texto', async () => {
+  const tipos = RESPUESTAS_RAPIDAS.find(g => g.grupo === 'Tipos de renta').items
+  assert.equal(tipos.find(i => i.label === 'Roof Top / Eventos')?.texto, TEXTOS.rooftop)
+
+  const general = RESPUESTAS_RAPIDAS.find(g => g.grupo === 'Información general').items
+  const s = caso('confirmado')
+  await s.enviar('¿Los lofts tienen estacionamiento?')
+  assert.equal(s.respuestas()[0]?.body, general.find(i => i.label === 'Estacionamiento').texto)
+})
 
 test('todas las FAQ nuevas en espera respetan flag, modo humano y asesor en últimas 12 horas', async () => {
   for (const [pregunta] of preguntas) {

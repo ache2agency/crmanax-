@@ -74,7 +74,13 @@ export function escenario(fase = 'checkin', whatsapp = '+523112694172', opciones
             }
           }
           if (op === 'update') rows.forEach(row => Object.assign(row, values))
-          if (op === 'insert') { rows = values.map(v => ({ ...v, id: `${table}-${db[table].length}`, created_at: new Date().toISOString() })); db[table].push(...rows) }
+          if (op === 'insert') {
+            if (values.some(v => v.id && db[table].some(row => row.id === v.id))) {
+              return Promise.resolve({ data: null, error: { code: '23505' } }).then(resolve, reject)
+            }
+            rows = values.map(v => ({ id: `${table}-${db[table].length}`, created_at: new Date().toISOString(), ...v }))
+            db[table].push(...rows)
+          }
           // La inserción conserva el orden aun cuando dos timestamps coincidan.
           if (orders.length) rows = [...rows].sort((a,b) => {
             for (const [k, asc] of orders) { const cmp = String(a[k]).localeCompare(String(b[k])); if (cmp) return asc ? cmp : -cmp }
@@ -89,14 +95,23 @@ export function escenario(fase = 'checkin', whatsapp = '+523112694172', opciones
   } }
   const exports = {}
   runInNewContext(source + '\nexports.catalogoPrueba = MSG.precios() + flowReminder("confirmar_precios");', {
-    exports, process: { env: { ...process.env, ...(opciones.admin ? { ALERT_WHATSAPP_NUMBER: opciones.admin } : {}), BOT_FAQ_EN_ESPERA: opciones.faqEspera } }, Response, setTimeout: opciones.setTimeout || ((fn) => { fn() }), Date: opciones.ahora ? class extends Date { constructor(...args) { super(...(args.length ? args : [opciones.ahora()])) } static now() { return opciones.ahora() } } : opciones.hoy ? class extends Date { constructor(...args) { super(...(args.length ? args : [opciones.hoy + 'T12:00:00Z'])) } } : Date, console: { log() {}, error: console.error },
+    exports, process: { env: { ...process.env, ...(opciones.admin ? { ALERT_WHATSAPP_NUMBER: opciones.admin } : {}), BOT_FAQ_EN_ESPERA: opciones.faqEspera, WHATSAPP_PROVIDER: opciones.provider } }, Response, setTimeout: opciones.setTimeout || ((fn) => { fn() }), Date: opciones.ahora ? class extends Date { constructor(...args) { super(...(args.length ? args : [opciones.ahora()])) } static now() { return opciones.ahora() } } : opciones.hoy ? class extends Date { constructor(...args) { super(...(args.length ? args : [opciones.hoy + 'T12:00:00Z'])) } } : Date, console: { log() {}, error: opciones.logError || console.error },
     require(name) {
       if (name === '@/lib/whatsapp/iniciar') return iniciar
       if (name === '@/lib/anaxagoras/textos') return textos
       if (name === '@/lib/anaxagoras/faq') return faq
       if (name.endsWith('/bot-parsers')) return opciones.hoy ? { ...parsers, hoyISO: () => opciones.hoy } : parsers
       if (name === '@/utils/supabase/server') return { createServiceRoleClient: () => supabase }
-      if (name.endsWith('/provider')) return { normalizePhoneNumber: n => n.startsWith('+') ? n : `+${n}`, sendMetaWhatsAppMessage: async msg => enviados.push(msg) }
+      if (name.endsWith('/provider')) return {
+        normalizePhoneNumber: n => n.startsWith('+') ? n : `+${n}`,
+        sendMetaWhatsAppMessage: async msg => enviados.push(msg),
+        sendTwilioWhatsAppMessage: async msg => enviados.push({ ...msg, provider: 'twilio' }),
+        sendMetaWhatsAppImage: async msg => {
+          if (opciones.fallaImagen?.(msg.link)) throw Error('fallo simulado de Meta')
+          enviados.push(msg)
+          return { id: `wamid.salida-${enviados.length}` }
+        },
+      }
       if (name === '@/lib/push') return { enviarPushATodos: async msg => { if (opciones.pushError) throw Error('push simulado falló'); pushes.push(msg) } }
       if (name === 'next/server') return { after() {} }
       if (name.endsWith('/seguimiento')) return {}
